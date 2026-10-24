@@ -1,0 +1,89 @@
+{
+  "entities": {
+    "Message": {
+      "title": "Message",
+      "description": "A chat message exchanged between the user and hamed chatbot",
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "description": "UID of the owning user"
+        },
+        "sender": {
+          "type": "string",
+          "enum": ["USER", "HAMED"],
+          "description": "Sender of the message"
+        },
+        "text": {
+          "type": "string",
+          "description": "Message text in Persian"
+        },
+        "sentiment": {
+          "type": "string",
+          "description": "Detected sentiment label"
+        },
+        "sentimentScore": {
+          "type": "number",
+          "description": "Confidence score of sentiment"
+        },
+        "sentimentAnalysis": {
+          "type": "string",
+          "description": "Detailed explanation of sentiment"
+        },
+        "isAudio": {
+          "type": "boolean",
+          "description": "Whether message was originally recorded audio"
+        },
+        "audioDurationSec": {
+          "type": "integer",
+          "description": "Duration of voice message in seconds"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp of creation"
+        }
+      },
+      "required": ["userId", "sender", "text", "sentiment", "createdAt"]
+    },
+    "UserSettings": {
+      "title": "UserSettings",
+      "description": "User preferences including hamed tone and platform theme",
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "description": "UID of the owning user"
+        },
+        "selectedTone": {
+          "type": "string",
+          "description": "Preferred persona tone of voice"
+        },
+        "platformTheme": {
+          "type": "string",
+          "description": "Preferred messenger theme (telegram, whatsapp, bale)"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Timestamp of update"
+        }
+      },
+      "required": ["userId", "selectedTone", "platformTheme", "updatedAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}/messages/{messageId}": {
+      "schema": {
+        "$ref": "#/entities/Message"
+      },
+      "description": "User conversation messages with hamed"
+    },
+    "/users/{userId}/settings/preferences": {
+      "schema": {
+        "$ref": "#/entities/UserSettings"
+      },
+      "description": "User tone and theme settings"
+    }
+  }
+}

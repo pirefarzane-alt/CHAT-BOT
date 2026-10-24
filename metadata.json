@@ -1,0 +1,6 @@
+{
+  "name": "hamed",
+  "description": "چت‌بات هوش مصنوعی حامد با یادگیری زبان فارسی، تحلیل احساسات و پوسته‌های پیام‌رسان",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

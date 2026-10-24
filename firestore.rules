@@ -1,0 +1,48 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function isValidMessage(data) {
+      return data.userId is string &&
+             data.sender in ['USER', 'HAMED'] &&
+             data.text is string && data.text.size() > 0 &&
+             data.sentiment is string &&
+             data.createdAt is timestamp;
+    }
+
+    function isValidUserSettings(data) {
+      return data.userId is string &&
+             data.selectedTone is string &&
+             data.platformTheme is string &&
+             data.updatedAt is timestamp;
+    }
+
+    match /users/{userId} {
+      allow read, write: if isOwner(userId);
+
+      match /messages/{messageId} {
+        allow read: if isOwner(userId);
+        allow create, update: if isOwner(userId) &&
+                                 request.resource.data.userId == userId &&
+                                 isValidMessage(request.resource.data);
+        allow delete: if isOwner(userId);
+      }
+
+      match /settings/{docId} {
+        allow read: if isOwner(userId);
+        allow create, update: if isOwner(userId) &&
+                                 request.resource.data.userId == userId &&
+                                 isValidUserSettings(request.resource.data);
+        allow delete: if isOwner(userId);
+      }
+    }
+  }
+}

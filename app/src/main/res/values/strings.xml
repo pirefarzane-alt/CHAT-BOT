@@ -1,0 +1,11 @@
+<resources>
+    <string name="app_name">hamed</string>
+    <string name="hamed_status_online">آنلاین | آماده پاسخگویی</string>
+    <string name="hamed_typing">حامد در حال تایپ…</string>
+    <string name="hamed_subtitle">دستیار هوشمند زبان فارسی</string>
+    <string name="input_placeholder">پیام خود را به فارسی بنویسید…</string>
+    <string name="record_audio">ضبط پیام صوتی</string>
+    <string name="stop_recording">توقف ضبط</string>
+    <string name="sentiment_title">تحلیل احساس پیام</string>
+    <string name="persian_learning_title">نکات یادگیری زبان فارسی</string>
+</resources>

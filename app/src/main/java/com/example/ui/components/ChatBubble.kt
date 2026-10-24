@@ -25,6 +25,8 @@ import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Lightbulb
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.Stop
+import androidx.compose.material.icons.filled.VolumeUp
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
@@ -51,6 +53,8 @@ fun ChatBubble(
     colors: MessengerColors,
     onShowSentiment: (ChatMessage) -> Unit,
     onShowLearningTip: (PersianLearningTip) -> Unit,
+    isSpeakingThis: Boolean = false,
+    onPlayVoice: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val isUser = message.sender == Sender.USER
@@ -98,11 +102,11 @@ fun ChatBubble(
                 .testTag(if (isUser) "user_bubble_${message.id}" else "bot_bubble_${message.id}")
         ) {
             Column {
-                // Sender label for bot
+                // Sender label for bot + Sentiment Emoji Icon next to AI's response
                 if (!isUser) {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.padding(bottom = 4.dp)
+                        modifier = Modifier.padding(bottom = 6.dp)
                     ) {
                         Text(
                             text = "حامد (hamed)",
@@ -110,6 +114,32 @@ fun ChatBubble(
                             fontWeight = FontWeight.Bold,
                             color = colors.accentColor
                         )
+
+                        Spacer(modifier = Modifier.width(8.dp))
+
+                        // Real-time sentiment badge with emoji icon next to AI response
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(colors.accentColor.copy(alpha = 0.14f))
+                                .clickable { onShowSentiment(message) }
+                                .padding(horizontal = 6.dp, vertical = 2.dp)
+                                .testTag("ai_sentiment_badge_${message.id}")
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    text = message.sentiment.emoji,
+                                    fontSize = 13.sp
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text(
+                                    text = message.sentiment.titleFa,
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = colors.accentColor
+                                )
+                            }
+                        }
                     }
                 }
 
@@ -215,8 +245,22 @@ fun ChatBubble(
                             )
                         }
                     } else {
-                        // Action buttons: Copy & Share
-                        Row {
+                        // Action buttons: Play Voice, Copy, Share
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            IconButton(
+                                onClick = onPlayVoice,
+                                modifier = Modifier
+                                    .size(26.dp)
+                                    .testTag("play_voice_${message.id}")
+                            ) {
+                                Icon(
+                                    imageVector = if (isSpeakingThis) Icons.Default.Stop else Icons.Default.VolumeUp,
+                                    contentDescription = if (isSpeakingThis) "توقف پخش صدا" else "پخش صوتی پیام حامد",
+                                    tint = if (isSpeakingThis) colors.accentColor else timeColor,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
+                            Spacer(modifier = Modifier.width(4.dp))
                             IconButton(
                                 onClick = {
                                     copyToClipboard(context, message.text)

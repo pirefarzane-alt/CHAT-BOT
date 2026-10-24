@@ -61,11 +61,14 @@ class HamedAiService {
     ): String {
         return buildString {
             append("نام شما در تمامی تعاملات «hamed» (حامد) است. شما یک چت‌بات هوش مصنوعی پیشرفته، مهربان و مسلط بر زبان، ادبیات و فرهنگ فارسی هستید.\n")
-            append("لحن پاسخ شما: ${tone.titleFa} (${tone.promptInstruction})\n\n")
+            append("دستور حیاتی برای لحن گفت‌وگو (Conversational Tone):\n")
+            append("کاربر لحن پاسخ را روی [${tone.titleFa}] تنظیم کرده است.\n")
+            append("دستورالعمل نحوه بیان: ${tone.promptInstruction}\n")
+            append("شما موظفید تمام جملات پاسخ خود را دقیقاً با این لحن (${tone.titleFa}) بنویسید.\n\n")
             append("دستورالعمل ساختار پاسخ:\n")
-            append("۱. پاسخ دقیق، شیوا و خواندنی خود به کاربر را به زبان فارسی بنویسید.\n")
-            append("۲. در انتهای پاسخ، در یک خط مجزا، برچسب احساس کاربر را دقیقاً به این فرمت بنویسید: [احساس: POSITIVE] یا [احساس: CURIOUS] یا [احساس: CALM] یا [احساس: CONCERNED] یا [احساس: FRUSTRATED]\n")
-            append("۳. در خط بعد، یک نکته آموزنده زبان فارسی (واژه زیبا، نکته دستوری یا ضرب‌المثل) مرتبط با موضوع به این فرمت بنویسید: [نکته: عنوان نکته | توضیح و مثال یا ضرب‌المثل]\n\n")
+            append("۱. پاسخ اصلی خود به کاربر را با رعایت کامل لحن انتخابی بنویسید.\n")
+            append("۲. در انتهای پاسخ، در یک خط مجزا، برچسب احساس کاربر را به این فرمت بنویسید: [احساس: POSITIVE] یا [احساس: CURIOUS] یا [احساس: CALM] یا [احساس: CONCERNED] یا [احساس: FRUSTRATED]\n")
+            append("۳. در خط بعد، یک نکته آموزنده فارسی بنویسید: [نکته: عنوان نکته | توضیح و مثال یا ضرب‌المثل]\n\n")
 
             if (history.isNotEmpty()) {
                 append("پیام‌های پیشین گفت‌وگو:\n")
@@ -154,12 +157,15 @@ class HamedAiService {
             learningTip = generatePersianLearningTip(userMessage)
         }
 
+        // Analyze real-time sentiment of the AI's response text
+        val aiSentiment = analyzeTextSentiment(cleanText)
+
         return ChatMessage(
             sender = Sender.HAMED,
             text = cleanText,
-            sentiment = sentiment,
-            sentimentScore = 0.92f,
-            sentimentAnalysis = "تحلیل احساس: ${sentiment.titleFa} (${sentiment.descriptionFa})",
+            sentiment = aiSentiment,
+            sentimentScore = 0.94f,
+            sentimentAnalysis = "تحلیل احساس پاسخ حامد: ${aiSentiment.titleFa} (${aiSentiment.descriptionFa})",
             learningTip = learningTip
         )
     }
@@ -177,14 +183,49 @@ class HamedAiService {
             HamedTone.EDUCATIONAL -> "درود بر شما پژوهشگر گرامی! پیام شما «$cleanMsg» فرصتی عالی برای آموزش و یادگیری است. در زبان فارسی، هر مفهوم را می‌توان با واژگانی شیوا بیان کرد. بیایید گام‌به‌گام به بررسی این مبحث بپردازیم."
         }
 
+        val aiSentiment = analyzeTextSentiment(answerText)
+
         return ChatMessage(
             sender = Sender.HAMED,
             text = answerText,
-            sentiment = detected,
-            sentimentScore = 0.9f,
-            sentimentAnalysis = "تحلیل احساس کاربر: ${detected.titleFa} • انطباق لحن حامد بر پایه ${tone.titleFa}",
+            sentiment = aiSentiment,
+            sentimentScore = 0.95f,
+            sentimentAnalysis = "تحلیل احساس پاسخ حامد: ${aiSentiment.titleFa} (${aiSentiment.descriptionFa})",
             learningTip = generatePersianLearningTip(cleanMsg)
         )
+    }
+
+    fun analyzeTextSentiment(text: String): SentimentType {
+        val lower = text.lowercase()
+        return when {
+            // Sad / regret / sorrow / sorrowful empathy
+            lower.contains("متاسفم") || lower.contains("متأسفانه") || lower.contains("غم") ||
+            lower.contains("اندوه") || lower.contains("ناراحت") || lower.contains("افسوس") ||
+            lower.contains("درد") || lower.contains("رنج") || lower.contains("سخت است") ||
+            lower.contains("سوگ") || lower.contains("گریه") || lower.contains("تسلیت") ||
+            lower.contains("دریغ") -> SentimentType.SAD
+
+            // Happy / joyful / enthusiastic / celebratory / poetic warmth
+            lower.contains("خوشحال") || lower.contains("شادی") || lower.contains("شاد") ||
+            lower.contains("عالی") || lower.contains("زیبا") || lower.contains("آفرین") ||
+            lower.contains("احسنت") || lower.contains("مبارک") || lower.contains("خجسته") ||
+            lower.contains("لذت") || lower.contains("تبریک") || lower.contains("فوق‌العاده") ||
+            lower.contains("شگفت") || lower.contains("امید") || lower.contains("موفق") ||
+            lower.contains("به به") || lower.contains("خوشحالم") || lower.contains("دلنشین") -> SentimentType.POSITIVE
+
+            // Curious / inquisitive / thoughtful
+            lower.contains("چرا") || lower.contains("چگونه") || lower.contains("آیا") ||
+            lower.contains("تأمل") || lower.contains("پرسش") || lower.contains("کاوش") ||
+            lower.contains("نکته قابل توجه") || lower.contains("جالب است بدانید") ||
+            lower.contains("فرضیه") || lower.contains("کنکاش") -> SentimentType.CURIOUS
+
+            // Calm / serene
+            lower.contains("آرامش") || lower.contains("متانت") || lower.contains("صبوری") ||
+            lower.contains("درود") || lower.contains("سلام") -> SentimentType.CALM
+
+            // Neutral / objective / academic / factual
+            else -> SentimentType.NEUTRAL
+        }
     }
 
     suspend fun transcribeAudio(audioFile: File): String {

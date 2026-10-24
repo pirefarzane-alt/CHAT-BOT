@@ -55,8 +55,10 @@ import com.example.ui.components.ChatBubble
 import com.example.ui.components.ChatInputBar
 import com.example.ui.components.HamedTopBar
 import com.example.ui.components.LearningTipDialog
+import com.example.ui.components.LiveVoiceCallOverlay
 import com.example.ui.components.PlatformSwitcherBar
 import com.example.ui.components.SentimentDetailDialog
+import com.example.ui.components.ToneSelectorRow
 import com.example.ui.components.ToneSelectorSheet
 import com.example.ui.theme.MessengerThemePalette
 import com.example.viewmodel.ChatViewModel
@@ -91,11 +93,14 @@ fun ChatScreen(
                         currentUser = uiState.currentUser,
                         isAuthLoading = uiState.isAuthLoading,
                         colors = colors,
+                        autoPlayVoice = uiState.autoPlayVoice,
                         onSignInWithGoogle = { activity -> viewModel.signInWithGoogle(activity) },
                         onSignOut = { viewModel.signOut() },
                         onSwitchTheme = { viewModel.setPlatformTheme(it) },
                         onOpenToneSelector = { showToneSheet = true },
-                        onClearChat = { viewModel.clearChat() }
+                        onClearChat = { viewModel.clearChat() },
+                        onOpenLiveCall = { viewModel.startLiveVoiceMode() },
+                        onToggleAutoPlayVoice = { viewModel.toggleAutoPlayVoice() }
                     )
                     PlatformSwitcherBar(
                         selectedTheme = uiState.platformTheme,
@@ -103,35 +108,12 @@ fun ChatScreen(
                         onThemeSelect = { viewModel.setPlatformTheme(it) }
                     )
 
-                    // Active Tone Pill Strip
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .background(colors.cardBackground.copy(alpha = 0.9f))
-                            .clickable { showToneSheet = true }
-                            .padding(horizontal = 14.dp, vertical = 6.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Tune,
-                            contentDescription = null,
-                            tint = colors.accentColor,
-                            modifier = Modifier.size(16.dp)
-                        )
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text(
-                            text = "لحن پاسخ حامد: ${uiState.selectedTone.emoji} ${uiState.selectedTone.titleFa}",
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = colors.accentColor,
-                            modifier = Modifier.weight(1f)
-                        )
-                        Text(
-                            text = "تغییر لحن ❯",
-                            fontSize = 11.sp,
-                            color = colors.botBubbleTime
-                        )
-                    }
+                    // Horizontal Tone Selector Row for one-tap switching (Formal, Casual, Poetic, etc.)
+                    ToneSelectorRow(
+                        selectedTone = uiState.selectedTone,
+                        colors = colors,
+                        onToneSelected = { viewModel.setTone(it) }
+                    )
                 }
             },
             bottomBar = {
@@ -203,11 +185,14 @@ fun ChatScreen(
                         contentPadding = PaddingValues(vertical = 10.dp)
                     ) {
                         items(uiState.messages, key = { it.id }) { msg ->
+                            val isSpeakingThis = uiState.isSpeaking && uiState.speakingMessageId == msg.id
                             ChatBubble(
                                 message = msg,
                                 colors = colors,
                                 onShowSentiment = { viewModel.selectSentimentMessage(it) },
-                                onShowLearningTip = { viewModel.selectLearningTip(it) }
+                                onShowLearningTip = { viewModel.selectLearningTip(it) },
+                                isSpeakingThis = isSpeakingThis,
+                                onPlayVoice = { viewModel.playMessageVoice(msg) }
                             )
                         }
 
@@ -247,6 +232,21 @@ fun ChatScreen(
                             }
                         }
                     }
+                }
+
+                // Live Voice Call Overlay
+                if (uiState.isLiveVoiceActive) {
+                    LiveVoiceCallOverlay(
+                        state = uiState.liveVoiceState,
+                        durationSec = uiState.liveVoiceDurationSec,
+                        selectedTone = uiState.selectedTone,
+                        userTranscript = uiState.liveUserTranscript,
+                        hamedResponse = uiState.liveHamedResponse,
+                        colors = colors,
+                        onToggleListening = { viewModel.toggleLiveVoiceListening() },
+                        onToneSelected = { viewModel.setTone(it) },
+                        onCloseCall = { viewModel.stopLiveVoiceMode() }
+                    )
                 }
 
                 // Tone Selector Sheet

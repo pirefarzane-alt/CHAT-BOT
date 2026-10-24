@@ -66,7 +66,7 @@ fun SentimentDetailDialog(
                     Spacer(modifier = Modifier.width(12.dp))
                     Column {
                         Text(
-                            text = "تحلیل احساس کاربر",
+                            text = if (message.sender == com.example.model.Sender.HAMED) "تحلیل احساس پاسخ حامد (AI)" else "تحلیل احساس پیام کاربر",
                             fontSize = 13.sp,
                             color = colors.botBubbleTime
                         )

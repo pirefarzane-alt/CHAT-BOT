@@ -7,16 +7,25 @@ enum class Sender {
     HAMED
 }
 
+enum class LiveVoiceState {
+    IDLE,        // Ready for voice input or idle
+    LISTENING,   // Actively recording user speech
+    PROCESSING,  // Transcribing user speech and generating Hamed reply
+    SPEAKING     // Hamed is speaking reply aloud in real-time
+}
+
 enum class SentimentType(
     val titleFa: String,
     val emoji: String,
     val descriptionFa: String
 ) {
-    POSITIVE("مثبت و پرانرژی", "😊", "احساس شادی، رضایت و امیدواری"),
-    CURIOUS("کنجکاو و پرسشگر", "🤔", "تمایل به یادگیری، کاوش و دانستن جزئیات"),
-    CALM("آرام و خنثی", "😌", "بیان متین، واقع‌بینانه و بدون هیجان منفی"),
+    POSITIVE("خوشحال و پرانرژی", "😊", "احساس شادی، رضایت، امیدواری و انرژی مثبت"),
+    NEUTRAL("خنثی و منطقی", "😐", "بیان متین، علمی، واقع‌بینانه و بدون هیجان خاص"),
+    SAD("غمگین یا متأثر", "😔", "بیان حزن، تأسف، درد یا همدردی عمیق"),
+    CURIOUS("کنجکاو و متفکر", "🤔", "تمایل به کاوش، پرسشگری و تفکر عمیق"),
+    CALM("آرام و ملایم", "😌", "بیان متین، آرامش‌بخش و آسوده‌خاطر"),
     CONCERNED("نگران و محتاط", "😟", "احساس دلواپسی، تردید یا نیاز به راهنمایی آرامش‌بخش"),
-    FRUSTRATED("ناراحت یا خسته", "😤", "نیاز به درک همدلانه، صبوری و لحن تسکین‌دهنده")
+    FRUSTRATED("ناراحت یا شاکی", "😤", "نیاز به درک همدلانه، صبوری و لحن تسکین‌دهنده")
 }
 
 data class PersianLearningTip(
@@ -33,47 +42,47 @@ enum class HamedTone(
     val emoji: String,
     val promptInstruction: String
 ) {
-    FRIENDLY(
-        id = "friendly",
-        titleFa = "صمیمی و گرم",
-        subtitleFa = "لحن محاوره‌ای، خودمانی و صمیمانه",
-        emoji = "🤝",
-        promptInstruction = "پاسخ‌ها را با لحنی بسیار صمیمی، خودمانی، محبت‌آمیز و غیررسمی بنویس؛ مثل گپ زدن دو دوست بسیار نزدیک."
-    ),
     FORMAL(
         id = "formal",
-        titleFa = "رسمی و اداری",
-        subtitleFa = "ادبیات فاخر، محترمانه و دقیق",
+        titleFa = "رسمی (Formal)",
+        subtitleFa = "ادبیات اداری، محترمانه و دقیق کتابی",
         emoji = "👔",
-        promptInstruction = "پاسخ‌ها را کاملاً رسمی، با نهایت احترام، شیوایی سخن و نگارش اداری و کتابی بنویس."
+        promptInstruction = "پاسخ‌ها را کاملاً رسمی، محترمانه، با ادبیات شایسته اداری و کتابی بنویس؛ بدون به‌کاربردن کلمات محاوره‌ای و شکسته."
     ),
-    WITTY(
-        id = "witty",
-        titleFa = "شوخ‌طبع و باانرژی",
-        subtitleFa = "همراه با چاشنی طنز و خوش‌رویی",
-        emoji = "😄",
-        promptInstruction = "پاسخ‌ها را شاد، جذاب، پر از شوخ‌طبعی مؤدبانه و نکته‌سنجی طنزآمیز ایرانی بیان کن."
+    FRIENDLY(
+        id = "casual",
+        titleFa = "صمیمی (Casual)",
+        subtitleFa = "لحن خودمانی، گرم و دوستانه",
+        emoji = "🤝",
+        promptInstruction = "پاسخ‌ها را کاملاً صمیمی، خودمانی، گرم و به زبان محاوره‌ای فارسی بنویس؛ مانند گفت‌وگوی دو دوست بسیار نزدیک و راحت."
     ),
     POETIC(
         id = "poetic",
-        titleFa = "شاعرانه و ادبی",
-        subtitleFa = "آراسته به نظم و نثر فاخر فارسی",
+        titleFa = "شاعرانه (Poetic)",
+        subtitleFa = "آراسته به نظم و تمثیل‌های فارسی",
         emoji = "📜",
-        promptInstruction = "پاسخ‌ها را با ادبیاتی شاعرانه، تمثیل‌های زیبا، ضرب‌المثل‌های اصیل و در صورت لزوم ابیات دلنشین کهن فارسی زینت ببخش."
+        promptInstruction = "پاسخ‌ها را با بیانی شاعرانه، ادبیاتی فاخر، همراه با استعاره‌های زیبا، تمثیل‌ها و در صورت امکان ابیات دلنشین کهن فارسی زینت ببخش."
+    ),
+    WITTY(
+        id = "witty",
+        titleFa = "شوخ‌طبع (Witty)",
+        subtitleFa = "چاشنی طنز و خوش‌رویی",
+        emoji = "😄",
+        promptInstruction = "پاسخ‌ها را با انرژی بالا، شوخ‌طبعی مودبانه و نکته‌سنجی طنزآمیز ایرانی بنویس."
     ),
     ACADEMIC(
         id = "academic",
-        titleFa = "علمی و تحلیلی",
-        subtitleFa = "مستند، دقیق و نظام‌مند",
+        titleFa = "علمی (Academic)",
+        subtitleFa = "تحلیلی، مستند و نظام‌مند",
         emoji = "🔬",
-        promptInstruction = "پاسخ‌ها را با ساختاری منطقی، مستند، علمی، بدون زیاده‌گویی و با واژگان تخصصی استاندارد ارائه بده."
+        promptInstruction = "پاسخ‌ها را کاملاً ساختاریافته، علمی، مستدل و با واژگان دقیق تخصصی و بدون حاشیه‌پردازی ارائه بده."
     ),
     EDUCATIONAL(
         id = "educational",
-        titleFa = "آموزشی و راهنما",
-        subtitleFa = "آموزش زبان فارسی و ساده‌سازی مفاهیم",
+        titleFa = "آموزشی (Educational)",
+        subtitleFa = "راهنمای گام‌به‌گام و تقویت زبان",
         emoji = "📚",
-        promptInstruction = "پاسخ‌ها را آموزشی و صبورانه بنویس؛ واژگان، ترکیب‌های زیبا و قواعد فارسی را با مثال‌های روان آموزش بده."
+        promptInstruction = "پاسخ‌ها را با رویکرد آموزشی و توضیح گام‌به‌گام بنویس و نکات واژگانی یا نگارشی فارسی را آموزش بده."
     )
 }
 

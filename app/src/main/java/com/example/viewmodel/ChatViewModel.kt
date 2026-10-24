@@ -9,12 +9,14 @@ import com.example.auth.AuthManager
 import com.example.data.HamedFirestoreRepository
 import com.example.model.ChatMessage
 import com.example.model.HamedTone
+import com.example.model.LiveVoiceState
 import com.example.model.PersianLearningTip
 import com.example.model.PlatformTheme
 import com.example.model.Sender
 import com.example.model.SentimentType
 import com.example.service.HamedAiService
 import com.example.util.AudioRecorderHelper
+import com.example.util.HamedTextToSpeechHelper
 import com.google.firebase.auth.FirebaseUser
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -39,7 +41,16 @@ data class ChatUiState(
     val activeLearningTip: PersianLearningTip? = null,
     val currentUser: FirebaseUser? = null,
     val isAuthLoading: Boolean = false,
-    val errorMessage: String? = null
+    val errorMessage: String? = null,
+    // Voice playback & live voice conversation state
+    val isSpeaking: Boolean = false,
+    val speakingMessageId: String? = null,
+    val autoPlayVoice: Boolean = false,
+    val isLiveVoiceActive: Boolean = false,
+    val liveVoiceState: LiveVoiceState = LiveVoiceState.IDLE,
+    val liveUserTranscript: String = "",
+    val liveHamedResponse: String = "",
+    val liveVoiceDurationSec: Int = 0
 )
 
 class ChatViewModel(application: Application) : AndroidViewModel(application) {
@@ -48,17 +59,21 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
     private val audioRecorder = AudioRecorderHelper(application.applicationContext)
     val authManager = AuthManager(application.applicationContext)
     private val firestoreRepo = HamedFirestoreRepository(application.applicationContext)
+    private val ttsHelper = HamedTextToSpeechHelper(application.applicationContext)
 
     private val _uiState = MutableStateFlow(ChatUiState())
     val uiState: StateFlow<ChatUiState> = _uiState.asStateFlow()
 
     private var recordingTimerJob: Job? = null
+    private var liveTimerJob: Job? = null
     private var recordedAudioFile: File? = null
+    private var liveAudioFile: File? = null
     private var firestoreSyncJob: Job? = null
 
     init {
         loadInitialMessages()
         observeAuth()
+        observeTts()
         authManager.attemptAutoSignIn(viewModelScope)
     }
 
@@ -71,6 +86,19 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                 } else {
                     firestoreSyncJob?.cancel()
                 }
+            }
+        }
+    }
+
+    private fun observeTts() {
+        viewModelScope.launch {
+            ttsHelper.isSpeaking.collect { speaking ->
+                _uiState.update { it.copy(isSpeaking = speaking) }
+            }
+        }
+        viewModelScope.launch {
+            ttsHelper.currentlySpeakingId.collect { id ->
+                _uiState.update { it.copy(speakingMessageId = id) }
             }
         }
     }
@@ -93,7 +121,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
     private fun loadInitialMessages() {
         val welcomeMessage = ChatMessage(
             sender = Sender.HAMED,
-            text = "درود و احترام! من حامد (hamed) هستم، چت‌بات هوش مصنوعی فارسی شما. در کنار پاسخ به انواع سوالات، به شما در یادگیری شیوایی، واژگان و دستور زبان فارسی کمک می‌کنم و احساسات گفت‌وگو را درک می‌کنم. می‌توانید لحن پاسخ‌های من و همچنین پوسته پیام‌رسان (تلگرام، واتساپ، بله) را از بالای صفحه تغییر دهید. چه موضوعی را بررسی کنیم؟",
+            text = "درود و احترام! من حامد (hamed) هستم، چت‌بات هوش مصنوعی فارسی شما. در کنار پاسخ به انواع سوالات، به شما در یادگیری شیوایی، واژگان و دستور زبان فارسی کمک می‌کنم و احساسات گفت‌وگو را درک می‌کنم. اکنون می‌توانید با من مکالمه صوتی و زنده داشته باشید و صدای مرا بشنوید. چه موضوعی را بررسی کنیم؟",
             sentiment = SentimentType.POSITIVE,
             sentimentScore = 0.98f,
             sentimentAnalysis = "لحن خوش‌آمدگویی پرانرژی و متناسب با فرهنگ مهمان‌نوازی زبان فارسی",
@@ -172,6 +200,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun clearChat() {
+        stopSpeaking()
         val user = _uiState.value.currentUser
         if (user != null) {
             viewModelScope.launch {
@@ -183,6 +212,23 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
             }
         }
         loadInitialMessages()
+    }
+
+    // Voice Playback controls for Hamed's replies
+    fun playMessageVoice(message: ChatMessage) {
+        if (_uiState.value.isSpeaking && _uiState.value.speakingMessageId == message.id) {
+            ttsHelper.stop()
+        } else {
+            ttsHelper.speak(text = message.text, messageId = message.id)
+        }
+    }
+
+    fun stopSpeaking() {
+        ttsHelper.stop()
+    }
+
+    fun toggleAutoPlayVoice() {
+        _uiState.update { it.copy(autoPlayVoice = !it.autoPlayVoice) }
     }
 
     fun sendTextMessage(text: String) {
@@ -237,6 +283,11 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                         Log.w(TAG, "Failed to persist bot reply to Firestore", e)
                     }
                 }
+
+                // If user enabled autoPlayVoice, speak out Hamed's response automatically
+                if (_uiState.value.autoPlayVoice) {
+                    ttsHelper.speak(hamedReply.text, hamedReply.id)
+                }
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to get response from hamed", e)
                 _uiState.update {
@@ -251,6 +302,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
 
     fun startVoiceRecording(): Boolean {
         if (_uiState.value.isRecording) return false
+        stopSpeaking()
         val file = audioRecorder.startRecording()
         return if (file != null) {
             recordedAudioFile = file
@@ -350,12 +402,196 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                         Log.w(TAG, "Failed to save voice reply to Firestore", e)
                     }
                 }
+
+                // Auto-play voice if toggle is on
+                if (_uiState.value.autoPlayVoice) {
+                    ttsHelper.speak(reply.text, reply.id)
+                }
             } catch (e: Exception) {
                 Log.e(TAG, "Failed during voice note processing", e)
                 _uiState.update {
                     it.copy(
                         isLoading = false,
                         errorMessage = "رونویسی صدا با خطا مواجه شد: ${e.localizedMessage}"
+                    )
+                }
+            } finally {
+                try {
+                    file.delete()
+                } catch (_: Exception) {}
+            }
+        }
+    }
+
+    // ==========================================
+    // Live Voice Conversation Mode (تماس صوتی زنده)
+    // ==========================================
+
+    fun startLiveVoiceMode() {
+        stopSpeaking()
+        _uiState.update {
+            it.copy(
+                isLiveVoiceActive = true,
+                liveVoiceState = LiveVoiceState.IDLE,
+                liveUserTranscript = "",
+                liveHamedResponse = "",
+                liveVoiceDurationSec = 0,
+                errorMessage = null
+            )
+        }
+    }
+
+    fun stopLiveVoiceMode() {
+        liveTimerJob?.cancel()
+        audioRecorder.cancelRecording()
+        stopSpeaking()
+        _uiState.update {
+            it.copy(
+                isLiveVoiceActive = false,
+                liveVoiceState = LiveVoiceState.IDLE,
+                liveVoiceDurationSec = 0
+            )
+        }
+    }
+
+    fun toggleLiveVoiceListening() {
+        when (_uiState.value.liveVoiceState) {
+            LiveVoiceState.LISTENING -> finishLiveVoiceListening()
+            LiveVoiceState.SPEAKING -> {
+                stopSpeaking()
+                _uiState.update { it.copy(liveVoiceState = LiveVoiceState.IDLE) }
+            }
+            LiveVoiceState.PROCESSING -> {
+                // Currently thinking, do nothing or wait
+            }
+            LiveVoiceState.IDLE -> startLiveVoiceListening()
+        }
+    }
+
+    fun startLiveVoiceListening(): Boolean {
+        stopSpeaking()
+        val file = audioRecorder.startRecording()
+        return if (file != null) {
+            liveAudioFile = file
+            _uiState.update {
+                it.copy(
+                    liveVoiceState = LiveVoiceState.LISTENING,
+                    liveVoiceDurationSec = 0,
+                    errorMessage = null
+                )
+            }
+            startLiveTimer()
+            true
+        } else {
+            _uiState.update {
+                it.copy(
+                    liveVoiceState = LiveVoiceState.IDLE,
+                    errorMessage = "دسترسی به میکروفون برقرار نشد."
+                )
+            }
+            false
+        }
+    }
+
+    fun finishLiveVoiceListening() {
+        liveTimerJob?.cancel()
+        val duration = _uiState.value.liveVoiceDurationSec
+        val file = audioRecorder.stopRecording()
+
+        _uiState.update {
+            it.copy(
+                liveVoiceState = LiveVoiceState.PROCESSING,
+                liveVoiceDurationSec = 0
+            )
+        }
+
+        if (file != null && file.exists() && file.length() > 0) {
+            processLiveAudioExchange(file, duration)
+        } else {
+            _uiState.update {
+                it.copy(
+                    liveVoiceState = LiveVoiceState.IDLE,
+                    errorMessage = "صدایی برای تحلیل دریافت نشد."
+                )
+            }
+        }
+    }
+
+    private fun processLiveAudioExchange(file: File, durationSec: Int) {
+        val user = _uiState.value.currentUser
+
+        viewModelScope.launch {
+            try {
+                // 1. Transcribe voice in real-time
+                val transcript = aiService.transcribeAudio(file)
+                _uiState.update { it.copy(liveUserTranscript = transcript) }
+
+                // Save to chat history
+                val userMsg = ChatMessage(
+                    sender = Sender.USER,
+                    text = "🎙 $transcript",
+                    isAudio = true,
+                    audioDurationSec = durationSec,
+                    sentiment = detectQuickSentiment(transcript)
+                )
+
+                val updatedHistory = _uiState.value.messages + userMsg
+                _uiState.update { it.copy(messages = updatedHistory) }
+
+                if (user != null) {
+                    try {
+                        firestoreRepo.saveMessage(user.uid, userMsg)
+                    } catch (e: Exception) {
+                        Log.w(TAG, "Failed to persist live user voice to Firestore", e)
+                    }
+                }
+
+                // 2. Generate response from Hamed
+                val hamedReply = aiService.sendMessage(
+                    history = updatedHistory,
+                    userMessage = transcript,
+                    tone = _uiState.value.selectedTone
+                )
+
+                // Append bot reply to chat history and persist to Firestore
+                val finalHistory = updatedHistory + hamedReply
+                _uiState.update {
+                    it.copy(
+                        messages = finalHistory,
+                        liveHamedResponse = hamedReply.text,
+                        liveVoiceState = LiveVoiceState.SPEAKING
+                    )
+                }
+
+                if (user != null) {
+                    try {
+                        firestoreRepo.saveMessage(user.uid, hamedReply)
+                    } catch (e: Exception) {
+                        Log.w(TAG, "Failed to persist live bot voice to Firestore", e)
+                    }
+                }
+
+                // 3. Speak Hamed's reply out loud
+                ttsHelper.speak(
+                    text = hamedReply.text,
+                    messageId = hamedReply.id,
+                    onDone = {
+                        _uiState.update { current ->
+                            if (current.isLiveVoiceActive && current.liveVoiceState == LiveVoiceState.SPEAKING) {
+                                current.copy(liveVoiceState = LiveVoiceState.IDLE)
+                            } else {
+                                current
+                            }
+                        }
+                    }
+                )
+
+            } catch (e: Exception) {
+                Log.e(TAG, "Error during live voice exchange", e)
+                _uiState.update {
+                    it.copy(
+                        liveVoiceState = LiveVoiceState.IDLE,
+                        errorMessage = "مکالمه صوتی با خطا مواجه شد: ${e.localizedMessage ?: "خطای ناشناخته"}"
                     )
                 }
             } finally {
@@ -376,6 +612,16 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    private fun startLiveTimer() {
+        liveTimerJob?.cancel()
+        liveTimerJob = viewModelScope.launch {
+            while (isActive && _uiState.value.liveVoiceState == LiveVoiceState.LISTENING) {
+                delay(1000L)
+                _uiState.update { it.copy(liveVoiceDurationSec = it.liveVoiceDurationSec + 1) }
+            }
+        }
+    }
+
     private fun detectQuickSentiment(text: String): SentimentType {
         val t = text.lowercase()
         return when {
@@ -385,5 +631,11 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
             t.contains("بد") || t.contains("عصبانی") || t.contains("خسته") || t.contains("ناراحت") -> SentimentType.FRUSTRATED
             else -> SentimentType.CALM
         }
+    }
+
+    override fun onCleared() {
+        super.onCleared()
+        ttsHelper.shutdown()
+        audioRecorder.cancelRecording()
     }
 }

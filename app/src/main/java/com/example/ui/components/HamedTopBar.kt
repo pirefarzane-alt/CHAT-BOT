@@ -17,11 +17,14 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccountCircle
+import androidx.compose.material.icons.filled.Call
 import androidx.compose.material.icons.filled.CloudDone
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Logout
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Tune
+import androidx.compose.material.icons.filled.VolumeOff
+import androidx.compose.material.icons.filled.VolumeUp
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -54,11 +57,14 @@ fun HamedTopBar(
     currentUser: FirebaseUser?,
     isAuthLoading: Boolean,
     colors: MessengerColors,
+    autoPlayVoice: Boolean,
     onSignInWithGoogle: (Activity) -> Unit,
     onSignOut: () -> Unit,
     onSwitchTheme: (PlatformTheme) -> Unit,
     onOpenToneSelector: () -> Unit,
     onClearChat: () -> Unit,
+    onOpenLiveCall: () -> Unit,
+    onToggleAutoPlayVoice: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     var menuExpanded by remember { mutableStateOf(false) }
@@ -196,6 +202,35 @@ fun HamedTopBar(
 
             Spacer(modifier = Modifier.width(4.dp))
 
+            // Live Voice Call Button
+            Box(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(16.dp))
+                    .background(colors.accentColor.copy(alpha = 0.22f))
+                    .clickable { onOpenLiveCall() }
+                    .padding(horizontal = 8.dp, vertical = 6.dp)
+                    .testTag("live_voice_call_button"),
+                contentAlignment = Alignment.Center
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = Icons.Default.Call,
+                        contentDescription = "مکالمه صوتی زنده با حامد",
+                        tint = colors.accentColor,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text(
+                        text = "تماس زنده",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = colors.topBarContent
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.width(2.dp))
+
             // Tone Selector Icon
             IconButton(
                 onClick = { onOpenToneSelector() },
@@ -225,6 +260,28 @@ fun HamedTopBar(
                     expanded = menuExpanded,
                     onDismissRequest = { menuExpanded = false }
                 ) {
+                    // Voice Autoplay Toggle
+                    DropdownMenuItem(
+                        text = {
+                            Text(
+                                text = if (autoPlayVoice) "خواندن خودکار پاسخ‌ها: فعال ✓" else "خواندن خودکار پاسخ‌ها: غیرفعال",
+                                fontWeight = if (autoPlayVoice) FontWeight.Bold else FontWeight.Normal
+                            )
+                        },
+                        leadingIcon = {
+                            Icon(
+                                imageVector = if (autoPlayVoice) Icons.Default.VolumeUp else Icons.Default.VolumeOff,
+                                contentDescription = null,
+                                tint = if (autoPlayVoice) colors.accentColor else colors.botBubbleTime
+                            )
+                        },
+                        onClick = {
+                            menuExpanded = false
+                            onToggleAutoPlayVoice()
+                        },
+                        modifier = Modifier.testTag("toggle_auto_play_voice")
+                    )
+
                     PlatformTheme.entries.forEach { theme ->
                         val isSelected = theme == platformTheme
                         DropdownMenuItem(

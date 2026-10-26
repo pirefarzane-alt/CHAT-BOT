@@ -44,6 +44,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.R
@@ -85,21 +86,22 @@ fun HamedTopBar(
             // Hamed Bot Avatar
             Box(
                 modifier = Modifier
-                    .size(44.dp)
+                    .size(42.dp)
                     .clip(CircleShape)
                     .background(colors.cardBackground)
+                    .clickable { onOpenToneSelector() }
             ) {
                 Image(
                     painter = painterResource(id = R.drawable.ic_hamed_logo),
                     contentDescription = "تصویر پروفایل حامد",
                     contentScale = ContentScale.Crop,
-                    modifier = Modifier.size(44.dp)
+                    modifier = Modifier.size(42.dp)
                 )
             }
 
             Spacer(modifier = Modifier.width(10.dp))
 
-            // Bot Info & Status
+            // Bot Info & Status (Guaranteed Single-Line to prevent vertical letter wrapping)
             Column(
                 modifier = Modifier
                     .weight(1f)
@@ -108,42 +110,48 @@ fun HamedTopBar(
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
                         text = "hamed (حامد)",
-                        fontSize = 17.sp,
+                        fontSize = 16.sp,
                         fontWeight = FontWeight.Bold,
-                        color = colors.topBarContent
+                        color = colors.topBarContent,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
                     Spacer(modifier = Modifier.width(6.dp))
                     Box(
                         modifier = Modifier
-                            .size(8.dp)
+                            .size(7.dp)
                             .clip(CircleShape)
                             .background(colors.accentColor)
                     )
                     if (currentUser != null) {
-                        Spacer(modifier = Modifier.width(6.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
                         Icon(
                             imageVector = Icons.Default.CloudDone,
                             contentDescription = "همگام‌سازی ابری فایربیس",
                             tint = colors.accentColor,
-                            modifier = Modifier.size(16.dp)
+                            modifier = Modifier.size(14.dp)
                         )
                     }
                 }
                 Text(
                     text = if (currentUser != null) "${platformTheme.statusTextFa} • ابری" else platformTheme.statusTextFa,
-                    fontSize = 12.sp,
-                    color = colors.topBarSubtitle
+                    fontSize = 11.sp,
+                    color = colors.topBarSubtitle,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
                 )
             }
 
-            // Google Sign-In / Account Button
+            Spacer(modifier = Modifier.width(6.dp))
+
+            // Google Account / Sign-In (Compact Pill)
             if (currentUser != null) {
                 Box(
                     modifier = Modifier
                         .clip(RoundedCornerShape(16.dp))
-                        .background(colors.cardBackground.copy(alpha = 0.2f))
+                        .background(colors.cardBackground.copy(alpha = 0.25f))
                         .clickable { onSignOut() }
-                        .padding(horizontal = 8.dp, vertical = 4.dp)
+                        .padding(horizontal = 8.dp, vertical = 5.dp)
                         .testTag("sign_out_button"),
                     contentAlignment = Alignment.Center
                 ) {
@@ -152,13 +160,14 @@ fun HamedTopBar(
                             imageVector = Icons.Default.Logout,
                             contentDescription = "خروج",
                             tint = colors.topBarContent,
-                            modifier = Modifier.size(14.dp)
+                            modifier = Modifier.size(13.dp)
                         )
                         Spacer(modifier = Modifier.width(4.dp))
                         Text(
-                            text = currentUser.displayName?.take(10) ?: "کاربر گوگل",
+                            text = currentUser.displayName?.split(" ")?.firstOrNull()?.take(7) ?: "کاربر",
                             fontSize = 11.sp,
-                            color = colors.topBarContent
+                            color = colors.topBarContent,
+                            maxLines = 1
                         )
                     }
                 }
@@ -170,13 +179,13 @@ fun HamedTopBar(
                         .clickable(enabled = !isAuthLoading && activity != null) {
                             activity?.let { onSignInWithGoogle(it) }
                         }
-                        .padding(horizontal = 10.dp, vertical = 6.dp)
+                        .padding(horizontal = 9.dp, vertical = 5.dp)
                         .testTag("sign_in_google_button"),
                     contentAlignment = Alignment.Center
                 ) {
                     if (isAuthLoading) {
                         CircularProgressIndicator(
-                            modifier = Modifier.size(16.dp),
+                            modifier = Modifier.size(14.dp),
                             color = colors.topBarContent,
                             strokeWidth = 2.dp
                         )
@@ -186,11 +195,11 @@ fun HamedTopBar(
                                 imageVector = Icons.Default.AccountCircle,
                                 contentDescription = null,
                                 tint = colors.topBarContent,
-                                modifier = Modifier.size(16.dp)
+                                modifier = Modifier.size(15.dp)
                             )
                             Spacer(modifier = Modifier.width(4.dp))
                             Text(
-                                text = "ورود با گوگل",
+                                text = "ورود",
                                 fontSize = 11.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = colors.topBarContent
@@ -202,44 +211,20 @@ fun HamedTopBar(
 
             Spacer(modifier = Modifier.width(4.dp))
 
-            // Live Voice Call Button
-            Box(
-                modifier = Modifier
-                    .clip(RoundedCornerShape(16.dp))
-                    .background(colors.accentColor.copy(alpha = 0.22f))
-                    .clickable { onOpenLiveCall() }
-                    .padding(horizontal = 8.dp, vertical = 6.dp)
-                    .testTag("live_voice_call_button"),
-                contentAlignment = Alignment.Center
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(
-                        imageVector = Icons.Default.Call,
-                        contentDescription = "مکالمه صوتی زنده با حامد",
-                        tint = colors.accentColor,
-                        modifier = Modifier.size(16.dp)
-                    )
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text(
-                        text = "تماس زنده",
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = colors.topBarContent
-                    )
-                }
-            }
-
-            Spacer(modifier = Modifier.width(2.dp))
-
-            // Tone Selector Icon
+            // Standard Messenger Call Button (Icon-only, compact and clean like WhatsApp/Telegram)
             IconButton(
-                onClick = { onOpenToneSelector() },
-                modifier = Modifier.testTag("tone_selector_button")
+                onClick = onOpenLiveCall,
+                modifier = Modifier
+                    .size(36.dp)
+                    .clip(CircleShape)
+                    .background(colors.accentColor.copy(alpha = 0.2f))
+                    .testTag("live_voice_call_button")
             ) {
                 Icon(
-                    imageVector = Icons.Default.Tune,
-                    contentDescription = "تنظیمات لحن",
-                    tint = colors.topBarContent
+                    imageVector = Icons.Default.Call,
+                    contentDescription = "مکالمه صوتی زنده با حامد",
+                    tint = colors.accentColor,
+                    modifier = Modifier.size(18.dp)
                 )
             }
 
@@ -247,12 +232,15 @@ fun HamedTopBar(
             Box {
                 IconButton(
                     onClick = { menuExpanded = true },
-                    modifier = Modifier.testTag("top_bar_menu_button")
+                    modifier = Modifier
+                        .size(36.dp)
+                        .testTag("top_bar_menu_button")
                 ) {
                     Icon(
                         imageVector = Icons.Default.MoreVert,
                         contentDescription = "گزینه‌های بیشتر",
-                        tint = colors.topBarContent
+                        tint = colors.topBarContent,
+                        modifier = Modifier.size(20.dp)
                     )
                 }
 
@@ -264,15 +252,17 @@ fun HamedTopBar(
                     DropdownMenuItem(
                         text = {
                             Text(
-                                text = if (autoPlayVoice) "خواندن خودکار پاسخ‌ها: فعال ✓" else "خواندن خودکار پاسخ‌ها: غیرفعال",
-                                fontWeight = if (autoPlayVoice) FontWeight.Bold else FontWeight.Normal
+                                text = if (autoPlayVoice) "خواندن خودکار صدا: فعال ✓" else "خواندن خودکار صدا: خاموش",
+                                fontWeight = if (autoPlayVoice) FontWeight.Bold else FontWeight.Normal,
+                                fontSize = 13.sp
                             )
                         },
                         leadingIcon = {
                             Icon(
                                 imageVector = if (autoPlayVoice) Icons.Default.VolumeUp else Icons.Default.VolumeOff,
                                 contentDescription = null,
-                                tint = if (autoPlayVoice) colors.accentColor else colors.botBubbleTime
+                                tint = if (autoPlayVoice) colors.accentColor else colors.botBubbleTime,
+                                modifier = Modifier.size(18.dp)
                             )
                         },
                         onClick = {
@@ -282,13 +272,33 @@ fun HamedTopBar(
                         modifier = Modifier.testTag("toggle_auto_play_voice")
                     )
 
+                    // Tone Selector in menu
+                    DropdownMenuItem(
+                        text = {
+                            Text(text = "تنظیمات لحن بیان", fontSize = 13.sp)
+                        },
+                        leadingIcon = {
+                            Icon(
+                                imageVector = Icons.Default.Tune,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        },
+                        onClick = {
+                            menuExpanded = false
+                            onOpenToneSelector()
+                        },
+                        modifier = Modifier.testTag("tone_menu_item")
+                    )
+
                     PlatformTheme.entries.forEach { theme ->
                         val isSelected = theme == platformTheme
                         DropdownMenuItem(
                             text = {
                                 Text(
                                     text = "پوسته ${theme.nameFa} (${theme.messengerName}) ${if (isSelected) "✓" else ""}",
-                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                    fontSize = 13.sp
                                 )
                             },
                             onClick = {
@@ -300,9 +310,9 @@ fun HamedTopBar(
                     }
 
                     DropdownMenuItem(
-                        text = { Text("پاکسازی گفت‌وگو") },
+                        text = { Text("پاکسازی گفت‌وگو", fontSize = 13.sp) },
                         leadingIcon = {
-                            Icon(Icons.Default.Delete, contentDescription = null)
+                            Icon(Icons.Default.Delete, contentDescription = null, modifier = Modifier.size(18.dp))
                         },
                         onClick = {
                             menuExpanded = false

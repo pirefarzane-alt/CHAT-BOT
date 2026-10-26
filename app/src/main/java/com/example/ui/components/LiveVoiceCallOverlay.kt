@@ -28,6 +28,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CallEnd
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Stop
@@ -134,13 +135,13 @@ fun LiveVoiceCallOverlay(
                         modifier = Modifier
                             .clip(CircleShape)
                             .background(Color.White.copy(alpha = 0.12f))
-                            .size(40.dp)
+                            .size(38.dp)
                             .testTag("close_live_call_button")
                     ) {
                         Icon(
-                            imageVector = Icons.Default.CallEnd,
-                            contentDescription = "بستن و بازگشت به چت",
-                            tint = Color(0xFFFF5252),
+                            imageVector = Icons.Default.Close,
+                            contentDescription = "بازگشت به چت",
+                            tint = Color.White,
                             modifier = Modifier.size(20.dp)
                         )
                     }

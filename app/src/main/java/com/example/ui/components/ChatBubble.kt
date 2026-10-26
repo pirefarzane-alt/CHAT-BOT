@@ -19,7 +19,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.graphics.Color
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Lightbulb
@@ -250,17 +252,21 @@ fun ChatBubble(
                             IconButton(
                                 onClick = onPlayVoice,
                                 modifier = Modifier
-                                    .size(26.dp)
+                                    .size(32.dp)
+                                    .clip(CircleShape)
+                                    .background(
+                                        if (isSpeakingThis) colors.accentColor.copy(alpha = 0.2f) else Color.Transparent
+                                    )
                                     .testTag("play_voice_${message.id}")
                             ) {
                                 Icon(
                                     imageVector = if (isSpeakingThis) Icons.Default.Stop else Icons.Default.VolumeUp,
                                     contentDescription = if (isSpeakingThis) "توقف پخش صدا" else "پخش صوتی پیام حامد",
                                     tint = if (isSpeakingThis) colors.accentColor else timeColor,
-                                    modifier = Modifier.size(16.dp)
+                                    modifier = Modifier.size(18.dp)
                                 )
                             }
-                            Spacer(modifier = Modifier.width(4.dp))
+                            Spacer(modifier = Modifier.width(2.dp))
                             IconButton(
                                 onClick = {
                                     copyToClipboard(context, message.text)

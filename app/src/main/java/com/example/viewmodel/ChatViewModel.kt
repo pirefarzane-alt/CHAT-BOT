@@ -2,6 +2,7 @@ package com.example.viewmodel
 
 import android.app.Activity
 import android.app.Application
+import android.content.Context
 import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
@@ -17,6 +18,7 @@ import com.example.model.SentimentType
 import com.example.service.HamedAiService
 import com.example.util.AudioRecorderHelper
 import com.example.util.HamedTextToSpeechHelper
+import com.example.util.SpeakResult
 import com.google.firebase.auth.FirebaseUser
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -42,6 +44,7 @@ data class ChatUiState(
     val currentUser: FirebaseUser? = null,
     val isAuthLoading: Boolean = false,
     val errorMessage: String? = null,
+    val showTtsGuide: Boolean = false,
     // Voice playback & live voice conversation state
     val isSpeaking: Boolean = false,
     val speakingMessageId: String? = null,
@@ -216,11 +219,51 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
 
     // Voice Playback controls for Hamed's replies
     fun playMessageVoice(message: ChatMessage) {
-        if (_uiState.value.isSpeaking && _uiState.value.speakingMessageId == message.id) {
-            ttsHelper.stop()
-        } else {
-            ttsHelper.speak(text = message.text, messageId = message.id)
+        val result = ttsHelper.speak(text = message.text, messageId = message.id)
+        when (result) {
+            is SpeakResult.Success -> {
+                // Speech playback started successfully
+            }
+            is SpeakResult.Stopped -> {
+                // Toggled off / stopped
+            }
+            is SpeakResult.MutedVolume -> {
+                _uiState.update {
+                    it.copy(errorMessage = "صدای رسانه دستگاه شما بسته (Mute) است؛ لطفاً دکمه افزایش صدای گوشی را بزنید.")
+                }
+            }
+            is SpeakResult.Initializing -> {
+                _uiState.update {
+                    it.copy(errorMessage = "موتور صوتی در حال بارگذاری است؛ لطفاً لحظاتی دیگر مجدداً لمس کنید.")
+                }
+            }
+            is SpeakResult.PersianVoiceMissing -> {
+                _uiState.update {
+                    it.copy(
+                        showTtsGuide = true,
+                        errorMessage = "موتور صوتی گوشی شما فاقد بسته زبان فارسی است. برای شنیدن صدا، لطفاً گفتار گوگل (Google Speech) را فعال کنید."
+                    )
+                }
+            }
+            is SpeakResult.Error -> {
+                _uiState.update {
+                    it.copy(errorMessage = result.message)
+                }
+            }
         }
+    }
+
+    fun openTtsSettings(context: Context) {
+        try {
+            val intent = ttsHelper.createTtsSettingsIntent()
+            context.startActivity(intent)
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to launch TTS settings", e)
+        }
+    }
+
+    fun dismissTtsGuide() {
+        _uiState.update { it.copy(showTtsGuide = false) }
     }
 
     fun stopSpeaking() {

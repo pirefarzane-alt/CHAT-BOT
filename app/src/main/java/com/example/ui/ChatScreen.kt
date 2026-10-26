@@ -25,6 +25,9 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Tune
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -32,8 +35,10 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -274,6 +279,44 @@ fun ChatScreen(
                         tip = tip,
                         colors = colors,
                         onDismiss = { viewModel.selectLearningTip(null) }
+                    )
+                }
+
+                // TTS Configuration / Persian Voice Setup Dialog
+                if (uiState.showTtsGuide) {
+                    val context = LocalContext.current
+                    AlertDialog(
+                        onDismissRequest = { viewModel.dismissTtsGuide() },
+                        title = {
+                            Text(
+                                text = "راهنمای فعال‌سازی صدای حامد",
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 16.sp
+                            )
+                        },
+                        text = {
+                            Text(
+                                text = "برای پخش صوتی جملات به زبان فارسی، به موتور «گفتار گوگل» (Google Speech Services) نیاز است.\n\nاگر صدای پیام پخش نمی‌شود، کلید افزایش صدای گوشی را بررسی کنید، یا با دکمه زیر به تنظیمات رفته و در بخش Preferred Engine گزینه «Google Speech» را فعال فرمایید.",
+                                fontSize = 13.sp,
+                                lineHeight = 20.sp
+                            )
+                        },
+                        confirmButton = {
+                            Button(
+                                onClick = {
+                                    viewModel.dismissTtsGuide()
+                                    viewModel.openTtsSettings(context)
+                                },
+                                colors = ButtonDefaults.buttonColors(containerColor = colors.accentColor)
+                            ) {
+                                Text("تنظیمات گفتار گوشی")
+                            }
+                        },
+                        dismissButton = {
+                            TextButton(onClick = { viewModel.dismissTtsGuide() }) {
+                                Text("بستن")
+                            }
+                        }
                     )
                 }
             }

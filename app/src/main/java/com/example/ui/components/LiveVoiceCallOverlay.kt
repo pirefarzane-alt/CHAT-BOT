@@ -47,6 +47,17 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
+import android.Manifest
+import android.content.pm.PackageManager
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.ui.platform.LocalContext
+import androidx.core.content.ContextCompat
+import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Tune
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -70,8 +81,21 @@ fun LiveVoiceCallOverlay(
     onToggleListening: () -> Unit,
     onToneSelected: (HamedTone) -> Unit,
     onCloseCall: () -> Unit,
+    errorMessage: String? = null,
+    onDismissError: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
+    val context = LocalContext.current
+    var showTonePicker by remember { mutableStateOf(false) }
+
+    val permissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { isGranted ->
+        if (isGranted) {
+            onToggleListening()
+        }
+    }
+
     Dialog(
         onDismissRequest = onCloseCall,
         properties = DialogProperties(usePlatformDefaultWidth = false)
@@ -174,18 +198,68 @@ fun LiveVoiceCallOverlay(
                         modifier = Modifier
                             .clip(RoundedCornerShape(12.dp))
                             .background(colors.accentColor.copy(alpha = 0.2f))
+                            .clickable { showTonePicker = true }
                             .padding(horizontal = 8.dp, vertical = 4.dp)
+                            .testTag("live_active_tone_pill")
                     ) {
-                        Text(
-                            text = "${selectedTone.emoji} ${selectedTone.titleFa.split(" ")[0]}",
-                            color = colors.accentColor,
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.SemiBold
-                        )
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                text = "${selectedTone.emoji} ${selectedTone.titleFa.split(" ")[0]}",
+                                color = colors.accentColor,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Icon(
+                                imageVector = Icons.Default.Tune,
+                                contentDescription = "تغییر لحن",
+                                tint = colors.accentColor,
+                                modifier = Modifier.size(12.dp)
+                            )
+                        }
                     }
                 }
 
-                Spacer(modifier = Modifier.height(20.dp))
+                // Error Banner inside overlay if an error occurs
+                if (!errorMessage.isNullOrBlank()) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 8.dp)
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(Color(0xFFE53935).copy(alpha = 0.9f))
+                            .padding(horizontal = 12.dp, vertical = 8.dp)
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = Icons.Default.Info,
+                                contentDescription = null,
+                                tint = Color.White,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = errorMessage,
+                                color = Color.White,
+                                fontSize = 12.sp,
+                                modifier = Modifier.weight(1f)
+                            )
+                            IconButton(
+                                onClick = onDismissError,
+                                modifier = Modifier.size(24.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Close,
+                                    contentDescription = "بستن خطا",
+                                    tint = Color.White,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(14.dp))
 
                 // Central Avatar with Pulsing Waves
                 Box(
@@ -362,17 +436,14 @@ fun LiveVoiceCallOverlay(
                     horizontalArrangement = Arrangement.SpaceEvenly,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    // Tone quick change button
+                    // Tone change button (opens tone picker dialog)
                     Box(
                         modifier = Modifier
                             .size(54.dp)
                             .clip(CircleShape)
                             .background(Color.White.copy(alpha = 0.12f))
                             .clickable {
-                                // Cycle to next tone
-                                val tones = HamedTone.entries
-                                val nextIndex = (tones.indexOf(selectedTone) + 1) % tones.size
-                                onToneSelected(tones[nextIndex])
+                                showTonePicker = true
                             }
                             .testTag("live_change_tone_button"),
                         contentAlignment = Alignment.Center
@@ -397,7 +468,16 @@ fun LiveVoiceCallOverlay(
                             .clip(CircleShape)
                             .background(micColor)
                             .clickable(enabled = state != LiveVoiceState.PROCESSING) {
-                                onToggleListening()
+                                val hasPermission = ContextCompat.checkSelfPermission(
+                                    context,
+                                    Manifest.permission.RECORD_AUDIO
+                                ) == PackageManager.PERMISSION_GRANTED
+
+                                if (state == LiveVoiceState.IDLE && !hasPermission) {
+                                    permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+                                } else {
+                                    onToggleListening()
+                                }
                             }
                             .testTag("live_call_mic_button"),
                         contentAlignment = Alignment.Center
@@ -468,6 +548,19 @@ fun LiveVoiceCallOverlay(
                     fontSize = 12.sp,
                     textAlign = TextAlign.Center,
                     modifier = Modifier.padding(bottom = 8.dp)
+                )
+            }
+
+            // In-call Tone Picker Sheet
+            if (showTonePicker) {
+                ToneSelectorSheet(
+                    currentTone = selectedTone,
+                    colors = colors,
+                    onToneSelected = { newTone ->
+                        onToneSelected(newTone)
+                        showTonePicker = false
+                    },
+                    onDismiss = { showTonePicker = false }
                 )
             }
         }

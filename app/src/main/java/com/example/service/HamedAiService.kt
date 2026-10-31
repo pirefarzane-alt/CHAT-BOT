@@ -10,7 +10,11 @@ import com.google.firebase.Firebase
 import com.google.firebase.ai.ai
 import com.google.firebase.ai.type.Content
 import com.google.firebase.ai.type.InlineDataPart
+import com.google.firebase.ai.type.PublicPreviewAPI
+import com.google.firebase.ai.type.ResponseModality
+import com.google.firebase.ai.type.SpeechConfig
 import com.google.firebase.ai.type.TextPart
+import com.google.firebase.ai.type.Voice
 import com.google.firebase.ai.type.generationConfig
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.TimeoutCancellationException
@@ -19,6 +23,7 @@ import java.io.File
 
 private const val TAG = "HamedAiService"
 
+@OptIn(PublicPreviewAPI::class)
 class HamedAiService {
 
     // Fast generation config without heavy JSON schema constrained decoding
@@ -44,14 +49,31 @@ class HamedAiService {
 
     private val transcribeModel by lazy {
         Firebase.ai.generativeModel(
-            modelName = "gemini-3.5-transcribe"
+            modelName = "gemini-3.8-flash",
+            generationConfig = fastConfig
         )
     }
 
     private val fallbackAudioModel by lazy {
         Firebase.ai.generativeModel(
-            modelName = "gemini-3.5-flash-lite"
+            modelName = "gemini-3.5-flash-lite",
+            generationConfig = fastConfig
         )
+    }
+
+    private val ttsModelsCache = mutableMapOf<String, com.google.firebase.ai.GenerativeModel>()
+
+    private fun getTtsModel(voiceName: String): com.google.firebase.ai.GenerativeModel {
+        val safeVoice = if (voiceName.isNotBlank()) voiceName else "Puck"
+        return ttsModelsCache.getOrPut(safeVoice) {
+            Firebase.ai.generativeModel(
+                modelName = "gemini-3.1-flash-tts-preview",
+                generationConfig = generationConfig {
+                    responseModalities = listOf(ResponseModality.AUDIO)
+                    speechConfig = SpeechConfig(Voice(safeVoice))
+                }
+            )
+        }
     }
 
     private fun buildPrompt(
@@ -67,8 +89,9 @@ class HamedAiService {
             append("شما موظفید تمام جملات پاسخ خود را دقیقاً با این لحن (${tone.titleFa}) بنویسید.\n\n")
             append("دستورالعمل ساختار پاسخ:\n")
             append("۱. پاسخ اصلی خود به کاربر را با رعایت کامل لحن انتخابی بنویسید.\n")
-            append("۲. در انتهای پاسخ، در یک خط مجزا، برچسب احساس کاربر را به این فرمت بنویسید: [احساس: POSITIVE] یا [احساس: CURIOUS] یا [احساس: CALM] یا [احساس: CONCERNED] یا [احساس: FRUSTRATED]\n")
-            append("۳. در خط بعد، یک نکته آموزنده فارسی بنویسید: [نکته: عنوان نکته | توضیح و مثال یا ضرب‌المثل]\n\n")
+            append("۲. طول کلام: حتماً موجز، دلنشین و در حد ۲ الی ۳ جمله (حداکثر ۱۶۰ تا ۲۴۰ کاراکتر) بنویسید تا هم مکالمه پویا بماند و هم صدای گوینده بلافاصله و با بالاترین کیفیت آماده و پخش شود.\n")
+            append("۳. در انتهای پاسخ، در یک خط مجزا، برچسب احساس کاربر را به این فرمت بنویسید: [احساس: POSITIVE] یا [احساس: CURIOUS] یا [احساس: CALM] یا [احساس: CONCERNED] یا [احساس: FRUSTRATED]\n")
+            append("۴. در خط بعد، یک نکته آموزنده فارسی بنویسید: [نکته: عنوان نکته | توضیح و مثال یا ضرب‌المثل]\n\n")
 
             if (history.isNotEmpty()) {
                 append("پیام‌های پیشین گفت‌وگو:\n")
@@ -90,9 +113,9 @@ class HamedAiService {
     ): ChatMessage {
         val prompt = buildPrompt(history, userMessage, tone)
 
-        // Tier 1: Try primary gemini-3.8-flash with 12s timeout
+        // Tier 1: Try primary gemini-3.8-flash with 30s timeout
         try {
-            val response = withTimeout(12_000L) {
+            val response = withTimeout(30_000L) {
                 primaryModel.generateContent(prompt)
             }
             val text = response.text?.trim()
@@ -100,22 +123,24 @@ class HamedAiService {
                 return parseModelResponse(text, userMessage)
             }
         } catch (e: TimeoutCancellationException) {
-            Log.w(TAG, "Primary model timed out after 12s, switching to fast-lite model")
+            Log.w(TAG, "Primary model timed out after 30s, switching to fast-lite model")
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
             Log.w(TAG, "Primary model error: ${e.message}, falling back to fast-lite")
         }
 
-        // Tier 2: Try ultra-fast gemini-3.5-flash-lite with 8s timeout
+        // Tier 2: Try ultra-fast gemini-3.5-flash-lite with 25s timeout
         try {
-            val response = withTimeout(8_000L) {
+            val response = withTimeout(25_000L) {
                 fastLiteModel.generateContent(prompt)
             }
             val text = response.text?.trim()
             if (!text.isNullOrBlank()) {
                 return parseModelResponse(text, userMessage)
             }
+        } catch (e: TimeoutCancellationException) {
+            Log.w(TAG, "Fast-lite model timed out after 25s, generating smart synthesis")
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -229,38 +254,172 @@ class HamedAiService {
     }
 
     suspend fun transcribeAudio(audioFile: File): String {
-        val audioBytes = audioFile.readBytes()
-        val audioContent = Content(
-            role = "user",
-            parts = listOf(
-                InlineDataPart(audioBytes, "audio/mp4"),
-                TextPart("لطفاً این گفتار فارسی را به صورت متن رونویسی کن و فقط متن گفتار را بازگردان.")
+        try {
+            val audioBytes = audioFile.readBytes()
+            if (audioBytes.isEmpty()) return ""
+
+            val audioContent = Content(
+                role = "user",
+                parts = listOf(
+                    InlineDataPart(audioBytes, "audio/mp4"),
+                    TextPart("به این صوت فارسی گوش کن و متن سخنان گوینده را دقیقاً رونویسی (transcribe) کن. فقط و فقط متن گفته‌شده را بدون هیچ توضیح اضافی یا نشانه‌ای بنویس.")
+                )
             )
-        )
 
-        // Try transcribeModel with 10s timeout
-        try {
-            val response = withTimeout(10_000L) {
-                transcribeModel.generateContent(audioContent)
+            // Try transcribeModel (gemini-3.8-flash) with 25s timeout
+            try {
+                val response = withTimeout(25_000L) {
+                    transcribeModel.generateContent(audioContent)
+                }
+                val transcript = response.text?.trim()
+                if (!transcript.isNullOrBlank()) {
+                    Log.d(TAG, "Audio transcribed: $transcript")
+                    return transcript
+                }
+            } catch (e: TimeoutCancellationException) {
+                Log.w(TAG, "transcribeModel timed out after 25s, trying fallback")
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.w(TAG, "transcribeModel error: ${e.message}, trying fallback")
             }
-            val transcript = response.text?.trim()
-            if (!transcript.isNullOrBlank()) return transcript
+
+            // Try fallback audio model with 20s timeout
+            try {
+                val response = withTimeout(20_000L) {
+                    fallbackAudioModel.generateContent(audioContent)
+                }
+                val transcript = response.text?.trim()
+                if (!transcript.isNullOrBlank()) {
+                    return transcript
+                }
+            } catch (e: TimeoutCancellationException) {
+                Log.w(TAG, "Fallback audio transcription timed out after 20s")
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.w(TAG, "Fallback audio transcription error: ${e.message}")
+            }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
-            Log.w(TAG, "transcribeModel error: ${e.message}, trying fallback audio model")
+            Log.w(TAG, "General transcribeAudio error: ${e.message}")
         }
 
-        // Try fast fallback audio model with 8s timeout
-        try {
-            val response = withTimeout(8_000L) {
-                fallbackAudioModel.generateContent(audioContent)
-            }
-            val transcript = response.text?.trim()
-            if (!transcript.isNullOrBlank()) return transcript
-        } catch (e: Exception) {
-            Log.w(TAG, "Fallback audio transcription error: ${e.message}")
+        return ""
+    }
+
+    suspend fun synthesizeSpeech(text: String, voiceName: String = "Puck"): GeneratedAudio? {
+        val cleanText = text
+            // Replace english "hamed" with Persian "حامد"
+            .replace(Regex("(?i)\\bhamed\\b"), "حامد")
+            // Remove markdown formatting
+            .replace(Regex("[*#_`~>]+"), " ")
+            // Remove quotation brackets and parenthesis that might confuse TTS
+            .replace(Regex("[«»\"'()\\[\\]{}]+"), " ")
+            // Remove emojis & special pictographs
+            .replace(Regex("[\\p{So}\\p{Cn}]"), "")
+            // Remove internal metadata tags [احساس: ...] or [نکته: ...]
+            .replace(Regex("\\[.*?\\]"), "")
+            // Collapse whitespaces
+            .replace(Regex("\\s+"), " ")
+            .trim()
+
+        if (cleanText.isBlank()) return null
+
+        val chosenVoice = if (voiceName.isNotBlank()) voiceName else "Puck"
+        val model = getTtsModel(chosenVoice)
+
+        // Split into chunks of ~180 characters to fit the model's audio token limit comfortably
+        val chunks = if (cleanText.length > 200) {
+            splitTextIntoSentences(cleanText, maxChunkLength = 180)
+        } else {
+            listOf(cleanText)
         }
 
-        return "سلام حامد، من یک پیام صوتی برای شما فرستادم."
+        try {
+            val allAudioBytes = java.io.ByteArrayOutputStream()
+            var detectedMime = "audio/pcm;rate=24000"
+
+            for ((idx, chunk) in chunks.withIndex()) {
+                if (idx > 0) {
+                    kotlinx.coroutines.delay(200L)
+                }
+                try {
+                    val response = withTimeout(25_000L) {
+                        model.generateContent(chunk)
+                    }
+                    val part = response.inlineDataParts.firstOrNull()
+                        ?: response.candidates.firstOrNull()?.content?.parts?.filterIsInstance<InlineDataPart>()?.firstOrNull()
+
+                    val bytes = part?.inlineData
+                    if (bytes != null && bytes.isNotEmpty()) {
+                        detectedMime = part.mimeType ?: detectedMime
+                        allAudioBytes.write(bytes)
+                    }
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    Log.w(TAG, "Speech chunk $idx failed with voice $chosenVoice: ${e.message}")
+                }
+            }
+
+            val finalBytes = allAudioBytes.toByteArray()
+            if (finalBytes.isNotEmpty()) {
+                Log.d(TAG, "Speech synthesized successfully with voice $chosenVoice (${finalBytes.size} bytes from ${chunks.size} chunks)")
+                return GeneratedAudio(finalBytes, detectedMime)
+            }
+        } catch (e: TimeoutCancellationException) {
+            Log.w(TAG, "Cloud TTS with voice $chosenVoice timed out after 30s")
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Log.w(TAG, "Cloud TTS with voice $chosenVoice failed: ${e.message}")
+        }
+
+        return null
+    }
+
+    private fun splitTextIntoSentences(text: String, maxChunkLength: Int = 180): List<String> {
+        val list = mutableListOf<String>()
+        val parts = text.split(Regex("(?<=[.!?؟؛\\n])\\s+"))
+        var buffer = StringBuilder()
+
+        for (part in parts) {
+            val p = part.trim()
+            if (p.isEmpty()) continue
+            if (buffer.length + p.length + 1 <= maxChunkLength) {
+                if (buffer.isNotEmpty()) buffer.append(" ")
+                buffer.append(p)
+            } else {
+                if (buffer.isNotEmpty()) {
+                    list.add(buffer.toString())
+                    buffer = StringBuilder()
+                }
+                if (p.length <= maxChunkLength) {
+                    buffer.append(p)
+                } else {
+                    // Part itself is longer than maxChunkLength: split on words
+                    val words = p.split(" ")
+                    for (word in words) {
+                        if (buffer.length + word.length + 1 <= maxChunkLength) {
+                            if (buffer.isNotEmpty()) buffer.append(" ")
+                            buffer.append(word)
+                        } else {
+                            if (buffer.isNotEmpty()) {
+                                list.add(buffer.toString())
+                                buffer = StringBuilder()
+                            }
+                            buffer.append(word)
+                        }
+                    }
+                }
+            }
+        }
+        if (buffer.isNotEmpty()) {
+            list.add(buffer.toString())
+        }
+        return list
     }
 
     private fun detectBasicSentiment(text: String): SentimentType {
@@ -298,3 +457,8 @@ class HamedAiService {
         }
     }
 }
+
+data class GeneratedAudio(
+    val bytes: ByteArray,
+    val mimeType: String
+)

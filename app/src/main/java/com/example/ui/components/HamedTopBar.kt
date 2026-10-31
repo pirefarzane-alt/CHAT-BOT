@@ -22,6 +22,7 @@ import androidx.compose.material.icons.filled.CloudDone
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Logout
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.RecordVoiceOver
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.filled.VolumeOff
 import androidx.compose.material.icons.filled.VolumeUp
@@ -66,6 +67,7 @@ fun HamedTopBar(
     onClearChat: () -> Unit,
     onOpenLiveCall: () -> Unit,
     onToggleAutoPlayVoice: () -> Unit,
+    onOpenVoiceSettings: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     var menuExpanded by remember { mutableStateOf(false) }
@@ -144,14 +146,14 @@ fun HamedTopBar(
 
             Spacer(modifier = Modifier.width(6.dp))
 
-            // Google Account / Sign-In (Compact Pill)
+            // Google Account / Sign-In (Pill)
             if (currentUser != null) {
                 Box(
                     modifier = Modifier
                         .clip(RoundedCornerShape(16.dp))
                         .background(colors.cardBackground.copy(alpha = 0.25f))
                         .clickable { onSignOut() }
-                        .padding(horizontal = 8.dp, vertical = 5.dp)
+                        .padding(horizontal = 10.dp, vertical = 7.dp)
                         .testTag("sign_out_button"),
                     contentAlignment = Alignment.Center
                 ) {
@@ -160,7 +162,7 @@ fun HamedTopBar(
                             imageVector = Icons.Default.Logout,
                             contentDescription = "خروج",
                             tint = colors.topBarContent,
-                            modifier = Modifier.size(13.dp)
+                            modifier = Modifier.size(14.dp)
                         )
                         Spacer(modifier = Modifier.width(4.dp))
                         Text(
@@ -179,7 +181,7 @@ fun HamedTopBar(
                         .clickable(enabled = !isAuthLoading && activity != null) {
                             activity?.let { onSignInWithGoogle(it) }
                         }
-                        .padding(horizontal = 9.dp, vertical = 5.dp)
+                        .padding(horizontal = 11.dp, vertical = 7.dp)
                         .testTag("sign_in_google_button"),
                     contentAlignment = Alignment.Center
                 ) {
@@ -195,7 +197,7 @@ fun HamedTopBar(
                                 imageVector = Icons.Default.AccountCircle,
                                 contentDescription = null,
                                 tint = colors.topBarContent,
-                                modifier = Modifier.size(15.dp)
+                                modifier = Modifier.size(16.dp)
                             )
                             Spacer(modifier = Modifier.width(4.dp))
                             Text(
@@ -209,13 +211,13 @@ fun HamedTopBar(
                 }
             }
 
-            Spacer(modifier = Modifier.width(4.dp))
+            Spacer(modifier = Modifier.width(6.dp))
 
             // Standard Messenger Call Button (Icon-only, compact and clean like WhatsApp/Telegram)
             IconButton(
                 onClick = onOpenLiveCall,
                 modifier = Modifier
-                    .size(36.dp)
+                    .size(40.dp)
                     .clip(CircleShape)
                     .background(colors.accentColor.copy(alpha = 0.2f))
                     .testTag("live_voice_call_button")
@@ -224,23 +226,25 @@ fun HamedTopBar(
                     imageVector = Icons.Default.Call,
                     contentDescription = "مکالمه صوتی زنده با حامد",
                     tint = colors.accentColor,
-                    modifier = Modifier.size(18.dp)
+                    modifier = Modifier.size(20.dp)
                 )
             }
+
+            Spacer(modifier = Modifier.width(2.dp))
 
             // More Options Menu
             Box {
                 IconButton(
                     onClick = { menuExpanded = true },
                     modifier = Modifier
-                        .size(36.dp)
+                        .size(40.dp)
                         .testTag("top_bar_menu_button")
                 ) {
                     Icon(
                         imageVector = Icons.Default.MoreVert,
                         contentDescription = "گزینه‌های بیشتر",
                         tint = colors.topBarContent,
-                        modifier = Modifier.size(20.dp)
+                        modifier = Modifier.size(22.dp)
                     )
                 }
 
@@ -270,6 +274,26 @@ fun HamedTopBar(
                             onToggleAutoPlayVoice()
                         },
                         modifier = Modifier.testTag("toggle_auto_play_voice")
+                    )
+
+                    // Voice & Speech Settings
+                    DropdownMenuItem(
+                        text = {
+                            Text(text = "تنظیمات صدا و گفتار", fontSize = 13.sp)
+                        },
+                        leadingIcon = {
+                            Icon(
+                                imageVector = Icons.Default.RecordVoiceOver,
+                                contentDescription = null,
+                                tint = colors.accentColor,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        },
+                        onClick = {
+                            menuExpanded = false
+                            onOpenVoiceSettings()
+                        },
+                        modifier = Modifier.testTag("voice_settings_menu_item")
                     )
 
                     // Tone Selector in menu

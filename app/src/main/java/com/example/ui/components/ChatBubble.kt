@@ -29,6 +29,7 @@ import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.VolumeUp
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
@@ -56,6 +57,7 @@ fun ChatBubble(
     onShowSentiment: (ChatMessage) -> Unit,
     onShowLearningTip: (PersianLearningTip) -> Unit,
     isSpeakingThis: Boolean = false,
+    isSynthesizingThis: Boolean = false,
     onPlayVoice: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
@@ -230,21 +232,37 @@ fun ChatBubble(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     if (isUser) {
-                        // Sentiment badge
-                        Box(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(12.dp))
-                                .background(colors.accentColor.copy(alpha = 0.15f))
-                                .clickable { onShowSentiment(message) }
-                                .padding(horizontal = 8.dp, vertical = 3.dp)
-                                .testTag("sentiment_badge_${message.id}")
-                        ) {
-                            Text(
-                                text = "${message.sentiment.emoji} ${message.sentiment.titleFa}",
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Medium,
-                                color = colors.accentColor
-                            )
+                        // Sentiment badge + copy button
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Box(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .background(colors.accentColor.copy(alpha = 0.15f))
+                                    .clickable { onShowSentiment(message) }
+                                    .padding(horizontal = 8.dp, vertical = 4.dp)
+                                    .testTag("sentiment_badge_${message.id}")
+                            ) {
+                                Text(
+                                    text = "${message.sentiment.emoji} ${message.sentiment.titleFa}",
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Medium,
+                                    color = colors.accentColor
+                                )
+                            }
+                            Spacer(modifier = Modifier.width(6.dp))
+                            IconButton(
+                                onClick = { copyToClipboard(context, message.text) },
+                                modifier = Modifier
+                                    .size(28.dp)
+                                    .testTag("copy_user_message_${message.id}")
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.ContentCopy,
+                                    contentDescription = "کپی پیام",
+                                    tint = timeColor,
+                                    modifier = Modifier.size(15.dp)
+                                )
+                            }
                         }
                     } else {
                         // Action buttons: Play Voice, Copy, Share
@@ -252,19 +270,27 @@ fun ChatBubble(
                             IconButton(
                                 onClick = onPlayVoice,
                                 modifier = Modifier
-                                    .size(32.dp)
+                                    .size(38.dp)
                                     .clip(CircleShape)
                                     .background(
-                                        if (isSpeakingThis) colors.accentColor.copy(alpha = 0.2f) else Color.Transparent
+                                        if (isSpeakingThis || isSynthesizingThis) colors.accentColor.copy(alpha = 0.2f) else Color.Transparent
                                     )
                                     .testTag("play_voice_${message.id}")
                             ) {
-                                Icon(
-                                    imageVector = if (isSpeakingThis) Icons.Default.Stop else Icons.Default.VolumeUp,
-                                    contentDescription = if (isSpeakingThis) "توقف پخش صدا" else "پخش صوتی پیام حامد",
-                                    tint = if (isSpeakingThis) colors.accentColor else timeColor,
-                                    modifier = Modifier.size(18.dp)
-                                )
+                                if (isSynthesizingThis) {
+                                    CircularProgressIndicator(
+                                        modifier = Modifier.size(18.dp),
+                                        strokeWidth = 2.dp,
+                                        color = colors.accentColor
+                                    )
+                                } else {
+                                    Icon(
+                                        imageVector = if (isSpeakingThis) Icons.Default.Stop else Icons.Default.VolumeUp,
+                                        contentDescription = if (isSpeakingThis) "توقف پخش صدا" else "پخش صوتی پیام حامد",
+                                        tint = if (isSpeakingThis) colors.accentColor else timeColor,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                }
                             }
                             Spacer(modifier = Modifier.width(2.dp))
                             IconButton(
@@ -272,30 +298,30 @@ fun ChatBubble(
                                     copyToClipboard(context, message.text)
                                 },
                                 modifier = Modifier
-                                    .size(26.dp)
+                                    .size(32.dp)
                                     .testTag("copy_message_${message.id}")
                             ) {
                                 Icon(
                                     imageVector = Icons.Default.ContentCopy,
                                     contentDescription = "کپی متن",
                                     tint = timeColor,
-                                    modifier = Modifier.size(15.dp)
+                                    modifier = Modifier.size(16.dp)
                                 )
                             }
-                            Spacer(modifier = Modifier.width(4.dp))
+                            Spacer(modifier = Modifier.width(2.dp))
                             IconButton(
                                 onClick = {
                                     shareToMessenger(context, message.text)
                                 },
                                 modifier = Modifier
-                                    .size(26.dp)
+                                    .size(32.dp)
                                     .testTag("share_message_${message.id}")
                             ) {
                                 Icon(
                                     imageVector = Icons.Default.Share,
                                     contentDescription = "اشتراک‌گذاری در پیام‌رسان",
                                     tint = timeColor,
-                                    modifier = Modifier.size(15.dp)
+                                    modifier = Modifier.size(16.dp)
                                 )
                             }
                         }

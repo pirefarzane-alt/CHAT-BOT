@@ -3,6 +3,8 @@ package com.example.viewmodel
 import android.app.Activity
 import android.app.Application
 import android.content.Context
+import android.content.Intent
+import android.net.Uri
 import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
@@ -17,8 +19,10 @@ import com.example.model.Sender
 import com.example.model.SentimentType
 import com.example.service.HamedAiService
 import com.example.util.AudioRecorderHelper
+import com.example.util.HamedAudioPlayer
 import com.example.util.HamedTextToSpeechHelper
 import com.example.util.SpeakResult
+import com.example.util.TtsVoiceInfo
 import com.google.firebase.auth.FirebaseUser
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -45,10 +49,18 @@ data class ChatUiState(
     val isAuthLoading: Boolean = false,
     val errorMessage: String? = null,
     val showTtsGuide: Boolean = false,
-    // Voice playback & live voice conversation state
+    // Voice playback & settings state
     val isSpeaking: Boolean = false,
     val speakingMessageId: String? = null,
+    val isSynthesizingVoice: Boolean = false,
+    val synthesizingMessageId: String? = null,
     val autoPlayVoice: Boolean = false,
+    val showVoiceSettings: Boolean = false,
+    val availableDeviceVoices: List<TtsVoiceInfo> = emptyList(),
+    val selectedDeviceVoice: String? = null,
+    val selectedCloudVoice: String = "Puck",
+    val speechRate: Float = 0.95f,
+    val speechPitch: Float = 1.0f,
     val isLiveVoiceActive: Boolean = false,
     val liveVoiceState: LiveVoiceState = LiveVoiceState.IDLE,
     val liveUserTranscript: String = "",
@@ -63,6 +75,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
     val authManager = AuthManager(application.applicationContext)
     private val firestoreRepo = HamedFirestoreRepository(application.applicationContext)
     private val ttsHelper = HamedTextToSpeechHelper(application.applicationContext)
+    private val audioPlayer = HamedAudioPlayer(application.applicationContext)
 
     private val _uiState = MutableStateFlow(ChatUiState())
     val uiState: StateFlow<ChatUiState> = _uiState.asStateFlow()
@@ -76,8 +89,29 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
     init {
         loadInitialMessages()
         observeAuth()
-        observeTts()
+        observeAudioPlayback()
+        observeTtsVoices()
+        loadVoicePreferences()
         authManager.attemptAutoSignIn(viewModelScope)
+    }
+
+    private fun loadVoicePreferences() {
+        _uiState.update {
+            it.copy(
+                selectedCloudVoice = ttsHelper.getCloudVoice(),
+                speechRate = ttsHelper.getSpeechRate(),
+                speechPitch = ttsHelper.getSpeechPitch(),
+                selectedDeviceVoice = ttsHelper.getSelectedVoiceName()
+            )
+        }
+    }
+
+    private fun observeTtsVoices() {
+        viewModelScope.launch {
+            ttsHelper.availableVoices.collect { voices ->
+                _uiState.update { it.copy(availableDeviceVoices = voices) }
+            }
+        }
     }
 
     private fun observeAuth() {
@@ -93,15 +127,43 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    private fun observeTts() {
+    private fun observeAudioPlayback() {
+        // Observe cloud audio player
+        viewModelScope.launch {
+            audioPlayer.isPlaying.collect { playing ->
+                if (playing) {
+                    _uiState.update { it.copy(isSpeaking = true) }
+                } else if (!ttsHelper.isSpeaking.value) {
+                    _uiState.update { it.copy(isSpeaking = false) }
+                }
+            }
+        }
+        viewModelScope.launch {
+            audioPlayer.currentPlayingId.collect { id ->
+                if (id != null) {
+                    _uiState.update { it.copy(speakingMessageId = id) }
+                } else if (ttsHelper.currentlySpeakingId.value == null) {
+                    _uiState.update { it.copy(speakingMessageId = null) }
+                }
+            }
+        }
+        // Observe on-device TTS helper
         viewModelScope.launch {
             ttsHelper.isSpeaking.collect { speaking ->
-                _uiState.update { it.copy(isSpeaking = speaking) }
+                if (speaking) {
+                    _uiState.update { it.copy(isSpeaking = true) }
+                } else if (!audioPlayer.isPlaying.value) {
+                    _uiState.update { it.copy(isSpeaking = false) }
+                }
             }
         }
         viewModelScope.launch {
             ttsHelper.currentlySpeakingId.collect { id ->
-                _uiState.update { it.copy(speakingMessageId = id) }
+                if (id != null) {
+                    _uiState.update { it.copy(speakingMessageId = id) }
+                } else if (audioPlayer.currentPlayingId.value == null) {
+                    _uiState.update { it.copy(speakingMessageId = null) }
+                }
             }
         }
     }
@@ -219,38 +281,149 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
 
     // Voice Playback controls for Hamed's replies
     fun playMessageVoice(message: ChatMessage) {
-        val result = ttsHelper.speak(text = message.text, messageId = message.id)
-        when (result) {
-            is SpeakResult.Success -> {
-                // Speech playback started successfully
+        // If clicking the message that is currently playing -> toggle off/stop it
+        if (_uiState.value.isSpeaking && _uiState.value.speakingMessageId == message.id) {
+            stopSpeaking()
+            return
+        }
+
+        // If clicking a message currently being synthesized -> ignore duplicate click
+        if (_uiState.value.isSynthesizingVoice && _uiState.value.synthesizingMessageId == message.id) {
+            return
+        }
+
+        stopSpeaking()
+
+        val chosenVoice = _uiState.value.selectedCloudVoice
+        val currentRate = _uiState.value.speechRate
+        val cacheKey = "${message.id}_${chosenVoice}"
+
+        // 1. Check if audio is already cached locally on disk
+        val cachedFile = audioPlayer.getCachedAudioFile(cacheKey)
+        if (cachedFile != null) {
+            audioPlayer.playAudioFile(cachedFile, message.id, playbackSpeed = currentRate)
+            return
+        }
+
+        // 2. Synthesize using high-fidelity Gemini Actor Neural Voice
+        viewModelScope.launch {
+            _uiState.update {
+                it.copy(
+                    isSynthesizingVoice = true,
+                    synthesizingMessageId = message.id
+                )
             }
-            is SpeakResult.Stopped -> {
-                // Toggled off / stopped
-            }
-            is SpeakResult.MutedVolume -> {
-                _uiState.update {
-                    it.copy(errorMessage = "صدای رسانه دستگاه شما بسته (Mute) است؛ لطفاً دکمه افزایش صدای گوشی را بزنید.")
-                }
-            }
-            is SpeakResult.Initializing -> {
-                _uiState.update {
-                    it.copy(errorMessage = "موتور صوتی در حال بارگذاری است؛ لطفاً لحظاتی دیگر مجدداً لمس کنید.")
-                }
-            }
-            is SpeakResult.PersianVoiceMissing -> {
-                _uiState.update {
-                    it.copy(
-                        showTtsGuide = true,
-                        errorMessage = "موتور صوتی گوشی شما فاقد بسته زبان فارسی است. برای شنیدن صدا، لطفاً گفتار گوگل (Google Speech) را فعال کنید."
+
+            var isRateLimited = false
+            try {
+                val generatedAudio = aiService.synthesizeSpeech(message.text, voiceName = chosenVoice)
+                if (generatedAudio != null) {
+                    val file = audioPlayer.saveAndPrepareAudio(
+                        messageId = cacheKey,
+                        rawBytes = generatedAudio.bytes,
+                        mimeType = generatedAudio.mimeType
                     )
+                    _uiState.update {
+                        it.copy(
+                            isSynthesizingVoice = false,
+                            synthesizingMessageId = null
+                        )
+                    }
+                    audioPlayer.playAudioFile(file, message.id, playbackSpeed = currentRate)
+                    return@launch
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "Gemini Actor voice failed for message ${message.id}: ${e.message}")
+                val msgLower = e.message?.lowercase() ?: ""
+                if (msgLower.contains("429") || msgLower.contains("quota") || msgLower.contains("resource_exhausted")) {
+                    isRateLimited = true
                 }
             }
-            is SpeakResult.Error -> {
+
+            _uiState.update {
+                it.copy(
+                    isSynthesizingVoice = false,
+                    synthesizingMessageId = null
+                )
+            }
+
+            val friendlyMsg = if (isRateLimited) {
+                "محدودیت موقت در تعداد درخواست صوت در دقیقه؛ لطفاً ۳۰ ثانیه صبر کرده و مجدداً علامت بلندگو را لمس کنید."
+            } else {
+                "صدا در حال حاضر دریافت نشد. لطفاً اتصال اینترنت خود را بررسی و مجدداً علامت بلندگو را لمس کنید."
+            }
+
+            // 3. Fallback to on-device TTS only if device actually has Persian voice
+            if (ttsHelper.isPersianVoiceAvailable) {
+                ttsHelper.speak(text = message.text, messageId = message.id)
+            } else {
                 _uiState.update {
-                    it.copy(errorMessage = result.message)
+                    it.copy(errorMessage = friendlyMsg)
                 }
             }
         }
+    }
+
+    // Voice Settings Handlers
+    fun openVoiceSettings() {
+        _uiState.update { it.copy(showVoiceSettings = true) }
+    }
+
+    fun closeVoiceSettings() {
+        _uiState.update { it.copy(showVoiceSettings = false) }
+    }
+
+    fun updateSpeechRate(rate: Float) {
+        ttsHelper.setSpeechRate(rate)
+        _uiState.update { it.copy(speechRate = rate) }
+    }
+
+    fun updateSpeechPitch(pitch: Float) {
+        ttsHelper.setSpeechPitch(pitch)
+        _uiState.update { it.copy(speechPitch = pitch) }
+    }
+
+    fun selectDeviceVoice(voiceName: String?) {
+        ttsHelper.setSelectedVoice(voiceName)
+        _uiState.update { it.copy(selectedDeviceVoice = voiceName) }
+    }
+
+    fun selectCloudVoice(voiceId: String) {
+        val (pitch, rate) = ttsHelper.applyPersona(voiceId)
+        _uiState.update {
+            it.copy(
+                selectedCloudVoice = voiceId,
+                speechPitch = pitch,
+                speechRate = rate,
+                selectedDeviceVoice = ttsHelper.getSelectedVoiceName()
+            )
+        }
+    }
+
+    fun testCurrentVoice() {
+        if (_uiState.value.isSpeaking) {
+            stopSpeaking()
+            return
+        }
+
+        stopSpeaking()
+
+        val chosenVoice = _uiState.value.selectedCloudVoice
+        val sampleText = when (chosenVoice) {
+            "Aoede" -> "درود بر شما! من دستیار هوشمند شما هستم؛ با کمال افتخار و با این لحن زیبا در خدمتتان."
+            "Kore" -> "سلام و درود دوست مهربانم؛ امیدوارم روزی پر از آرامش، شادی و برکت داشته باشید."
+            "Fenrir" -> "با سلام و احترام؛ اینجانب حامد هستم، با صدایی باوقار و ادیبانه در خدمت شما."
+            else -> "سلام! من حامد هستم؛ پرانرژی، پویا و با صدای مردانه آماده گفت‌وگو با شما."
+        }
+
+        playMessageVoice(
+            ChatMessage(
+                id = "test_preview_voice",
+                sender = Sender.HAMED,
+                text = sampleText,
+                sentiment = SentimentType.POSITIVE
+            )
+        )
     }
 
     fun openTtsSettings(context: Context) {
@@ -262,12 +435,39 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun openStoreForTts(context: Context) {
+        try {
+            val intent = Intent(Intent.ACTION_VIEW, Uri.parse("market://details?id=com.reecedunn.espeak")).apply {
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK
+            }
+            context.startActivity(intent)
+        } catch (_: Exception) {
+            try {
+                val webIntent = Intent(Intent.ACTION_VIEW, Uri.parse("https://play.google.com/store/apps/details?id=com.reecedunn.espeak")).apply {
+                    flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                }
+                context.startActivity(webIntent)
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to launch store for TTS", e)
+            }
+        }
+    }
+
     fun dismissTtsGuide() {
         _uiState.update { it.copy(showTtsGuide = false) }
     }
 
     fun stopSpeaking() {
+        audioPlayer.stop()
         ttsHelper.stop()
+        _uiState.update {
+            it.copy(
+                isSpeaking = false,
+                speakingMessageId = null,
+                isSynthesizingVoice = false,
+                synthesizingMessageId = null
+            )
+        }
     }
 
     fun toggleAutoPlayVoice() {
@@ -329,14 +529,20 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
 
                 // If user enabled autoPlayVoice, speak out Hamed's response automatically
                 if (_uiState.value.autoPlayVoice) {
-                    ttsHelper.speak(hamedReply.text, hamedReply.id)
+                    playMessageVoice(hamedReply)
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to get response from hamed", e)
+                val friendlyError = when {
+                    e is kotlinx.coroutines.TimeoutCancellationException || e.message?.contains("time", ignoreCase = true) == true ->
+                        "پاسخ حامد با تاخیر مواجه شد. لطفاً اتصال اینترنت خود را بررسی کرده و دوباره امتحان کنید."
+                    else ->
+                        "متأسفانه در دریافت پاسخ مشکلی پیش آمد: ${e.localizedMessage ?: "خطای اتصال"}"
+                }
                 _uiState.update {
                     it.copy(
                         isLoading = false,
-                        errorMessage = "متأسفانه در برقراری ارتباط مشکلی پیش آمد: ${e.localizedMessage ?: "خطای ناشناخته"}"
+                        errorMessage = friendlyError
                     )
                 }
             }
@@ -448,14 +654,19 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
 
                 // Auto-play voice if toggle is on
                 if (_uiState.value.autoPlayVoice) {
-                    ttsHelper.speak(reply.text, reply.id)
+                    playMessageVoice(reply)
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "Failed during voice note processing", e)
+                val friendly = if (e is kotlinx.coroutines.TimeoutCancellationException || e.message?.contains("time", ignoreCase = true) == true) {
+                    "رونویسی صدا با تاخیر مواجه شد. لطفاً اتصال اینترنت خود را بررسی کنید."
+                } else {
+                    "رونویسی صدا با خطا مواجه شد: ${e.localizedMessage ?: "عدم ارتباط"}"
+                }
                 _uiState.update {
                     it.copy(
                         isLoading = false,
-                        errorMessage = "رونویسی صدا با خطا مواجه شد: ${e.localizedMessage}"
+                        errorMessage = friendly
                     )
                 }
             } finally {
@@ -565,8 +776,20 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
 
         viewModelScope.launch {
             try {
+                _uiState.update { it.copy(liveVoiceState = LiveVoiceState.PROCESSING) }
+
                 // 1. Transcribe voice in real-time
                 val transcript = aiService.transcribeAudio(file)
+                if (transcript.isBlank()) {
+                    _uiState.update {
+                        it.copy(
+                            liveVoiceState = LiveVoiceState.IDLE,
+                            errorMessage = "صدای واضحی دریافت نشد؛ لطفاً دوباره دکمه را لمس کرده و صحبت کنید."
+                        )
+                    }
+                    return@launch
+                }
+
                 _uiState.update { it.copy(liveUserTranscript = transcript) }
 
                 // Save to chat history
@@ -601,8 +824,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                 _uiState.update {
                     it.copy(
                         messages = finalHistory,
-                        liveHamedResponse = hamedReply.text,
-                        liveVoiceState = LiveVoiceState.SPEAKING
+                        liveHamedResponse = hamedReply.text
                     )
                 }
 
@@ -614,27 +836,61 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                     }
                 }
 
-                // 3. Speak Hamed's reply out loud
-                ttsHelper.speak(
-                    text = hamedReply.text,
-                    messageId = hamedReply.id,
-                    onDone = {
-                        _uiState.update { current ->
-                            if (current.isLiveVoiceActive && current.liveVoiceState == LiveVoiceState.SPEAKING) {
-                                current.copy(liveVoiceState = LiveVoiceState.IDLE)
-                            } else {
-                                current
+                // 3. Play Hamed's reply out loud using Gemini Actor voice
+                try {
+                    val generatedAudio = aiService.synthesizeSpeech(hamedReply.text, voiceName = _uiState.value.selectedCloudVoice)
+                    if (generatedAudio != null) {
+                        val audioFile = audioPlayer.saveAndPrepareAudio(
+                            messageId = "${hamedReply.id}_${_uiState.value.selectedCloudVoice}",
+                            rawBytes = generatedAudio.bytes,
+                            mimeType = generatedAudio.mimeType
+                        )
+                        // Transition to SPEAKING only when audio is actually playing
+                        _uiState.update {
+                            if (it.isLiveVoiceActive) it.copy(liveVoiceState = LiveVoiceState.SPEAKING) else it
+                        }
+                        audioPlayer.playAudioFile(
+                            file = audioFile,
+                            messageId = hamedReply.id,
+                            playbackSpeed = _uiState.value.speechRate,
+                            onDone = {
+                                _uiState.update { current ->
+                                    if (current.isLiveVoiceActive && current.liveVoiceState == LiveVoiceState.SPEAKING) {
+                                        current.copy(liveVoiceState = LiveVoiceState.IDLE)
+                                    } else {
+                                        current
+                                    }
+                                }
                             }
+                        )
+                    } else {
+                        _uiState.update { current ->
+                            if (current.isLiveVoiceActive) {
+                                current.copy(
+                                    liveVoiceState = LiveVoiceState.IDLE,
+                                    errorMessage = "پاسخ متنی حامد آماده شد. برای پخش صوتی علامت بلندگو را بزنید."
+                                )
+                            } else current
                         }
                     }
-                )
+                } catch (e: Exception) {
+                    Log.w(TAG, "Audio playback error in live exchange: ${e.message}")
+                    _uiState.update { current ->
+                        if (current.isLiveVoiceActive) current.copy(liveVoiceState = LiveVoiceState.IDLE) else current
+                    }
+                }
 
             } catch (e: Exception) {
                 Log.e(TAG, "Error during live voice exchange", e)
+                val friendlyMsg = if (e is kotlinx.coroutines.TimeoutCancellationException || e.message?.contains("time", ignoreCase = true) == true) {
+                    "مکالمه با تاخیر مواجه شد. لطفاً دوباره تلاش کنید."
+                } else {
+                    "مکالمه صوتی با خطا مواجه شد: ${e.localizedMessage ?: "خطای اتصال"}"
+                }
                 _uiState.update {
                     it.copy(
                         liveVoiceState = LiveVoiceState.IDLE,
-                        errorMessage = "مکالمه صوتی با خطا مواجه شد: ${e.localizedMessage ?: "خطای ناشناخته"}"
+                        errorMessage = friendlyMsg
                     )
                 }
             } finally {
@@ -678,6 +934,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
 
     override fun onCleared() {
         super.onCleared()
+        audioPlayer.stop()
         ttsHelper.shutdown()
         audioRecorder.cancelRecording()
     }

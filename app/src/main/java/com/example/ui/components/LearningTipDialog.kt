@@ -12,12 +12,14 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Lightbulb
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -51,7 +53,7 @@ fun LearningTipDialog(
                     .fillMaxWidth()
                     .padding(20.dp)
             ) {
-                // Header
+                // Header with icon & close button
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     modifier = Modifier.fillMaxWidth()
@@ -70,7 +72,7 @@ fun LearningTipDialog(
                         )
                     }
                     Spacer(modifier = Modifier.width(12.dp))
-                    Column {
+                    Column(modifier = Modifier.weight(1f)) {
                         Text(
                             text = "یادگیری زبان فارسی با حامد",
                             fontSize = 12.sp,
@@ -81,6 +83,17 @@ fun LearningTipDialog(
                             fontSize = 16.sp,
                             fontWeight = FontWeight.Bold,
                             color = colors.botBubbleText
+                        )
+                    }
+                    IconButton(
+                        onClick = onDismiss,
+                        modifier = Modifier.size(36.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Close,
+                            contentDescription = "بستن",
+                            tint = colors.botBubbleTime,
+                            modifier = Modifier.size(20.dp)
                         )
                     }
                 }

@@ -31,6 +31,7 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -65,6 +66,7 @@ import com.example.ui.components.PlatformSwitcherBar
 import com.example.ui.components.SentimentDetailDialog
 import com.example.ui.components.ToneSelectorRow
 import com.example.ui.components.ToneSelectorSheet
+import com.example.ui.components.VoiceSettingsDialog
 import com.example.ui.theme.MessengerThemePalette
 import com.example.viewmodel.ChatViewModel
 
@@ -79,6 +81,7 @@ fun ChatScreen(
 
     var showToneSheet by remember { mutableStateOf(false) }
     val listState = rememberLazyListState()
+    val context = LocalContext.current
 
     // Auto-scroll on new messages
     LaunchedEffect(uiState.messages.size, uiState.isLoading) {
@@ -105,7 +108,8 @@ fun ChatScreen(
                         onOpenToneSelector = { showToneSheet = true },
                         onClearChat = { viewModel.clearChat() },
                         onOpenLiveCall = { viewModel.startLiveVoiceMode() },
-                        onToggleAutoPlayVoice = { viewModel.toggleAutoPlayVoice() }
+                        onToggleAutoPlayVoice = { viewModel.toggleAutoPlayVoice() },
+                        onOpenVoiceSettings = { viewModel.openVoiceSettings() }
                     )
                     PlatformSwitcherBar(
                         selectedTheme = uiState.platformTheme,
@@ -150,31 +154,34 @@ fun ChatScreen(
                         Box(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .background(Color(0xFFE53935).copy(alpha = 0.9f))
+                                .background(Color(0xFFE53935).copy(alpha = 0.95f))
                                 .padding(horizontal = 14.dp, vertical = 8.dp)
+                                .clickable { viewModel.dismissError() }
                         ) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Icon(
                                     imageVector = Icons.Default.Info,
                                     contentDescription = null,
                                     tint = Color.White,
-                                    modifier = Modifier.size(18.dp)
+                                    modifier = Modifier.size(20.dp)
                                 )
                                 Spacer(modifier = Modifier.width(8.dp))
                                 Text(
                                     text = uiState.errorMessage ?: "",
                                     color = Color.White,
                                     fontSize = 12.sp,
+                                    lineHeight = 18.sp,
                                     modifier = Modifier.weight(1f)
                                 )
                                 IconButton(
                                     onClick = { viewModel.dismissError() },
-                                    modifier = Modifier.size(24.dp)
+                                    modifier = Modifier.size(36.dp)
                                 ) {
                                     Icon(
                                         imageVector = Icons.Default.Close,
                                         contentDescription = "بستن",
-                                        tint = Color.White
+                                        tint = Color.White,
+                                        modifier = Modifier.size(18.dp)
                                     )
                                 }
                             }
@@ -191,12 +198,14 @@ fun ChatScreen(
                     ) {
                         items(uiState.messages, key = { it.id }) { msg ->
                             val isSpeakingThis = uiState.isSpeaking && uiState.speakingMessageId == msg.id
+                            val isSynthesizingThis = uiState.isSynthesizingVoice && uiState.synthesizingMessageId == msg.id
                             ChatBubble(
                                 message = msg,
                                 colors = colors,
                                 onShowSentiment = { viewModel.selectSentimentMessage(it) },
                                 onShowLearningTip = { viewModel.selectLearningTip(it) },
                                 isSpeakingThis = isSpeakingThis,
+                                isSynthesizingThis = isSynthesizingThis,
                                 onPlayVoice = { viewModel.playMessageVoice(msg) }
                             )
                         }
@@ -250,7 +259,9 @@ fun ChatScreen(
                         colors = colors,
                         onToggleListening = { viewModel.toggleLiveVoiceListening() },
                         onToneSelected = { viewModel.setTone(it) },
-                        onCloseCall = { viewModel.stopLiveVoiceMode() }
+                        onCloseCall = { viewModel.stopLiveVoiceMode() },
+                        errorMessage = uiState.errorMessage,
+                        onDismissError = { viewModel.dismissError() }
                     )
                 }
 
@@ -282,41 +293,25 @@ fun ChatScreen(
                     )
                 }
 
-                // TTS Configuration / Persian Voice Setup Dialog
-                if (uiState.showTtsGuide) {
-                    val context = LocalContext.current
-                    AlertDialog(
-                        onDismissRequest = { viewModel.dismissTtsGuide() },
-                        title = {
-                            Text(
-                                text = "راهنمای فعال‌سازی صدای حامد",
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 16.sp
-                            )
+                // Voice Settings Dialog
+                if (uiState.showVoiceSettings) {
+                    VoiceSettingsDialog(
+                        colors = colors,
+                        availableDeviceVoices = uiState.availableDeviceVoices,
+                        selectedDeviceVoice = uiState.selectedDeviceVoice,
+                        selectedCloudVoice = uiState.selectedCloudVoice,
+                        speechRate = uiState.speechRate,
+                        speechPitch = uiState.speechPitch,
+                        isPlayingPreview = uiState.isSpeaking && uiState.speakingMessageId == "test_preview_voice",
+                        onSpeechRateChange = { viewModel.updateSpeechRate(it) },
+                        onSpeechPitchChange = { viewModel.updateSpeechPitch(it) },
+                        onSelectDeviceVoice = { viewModel.selectDeviceVoice(it) },
+                        onSelectCloudVoice = { viewModel.selectCloudVoice(it) },
+                        onTestVoice = { viewModel.testCurrentVoice() },
+                        onOpenTtsSettings = {
+                            viewModel.openTtsSettings(context)
                         },
-                        text = {
-                            Text(
-                                text = "برای پخش صوتی جملات به زبان فارسی، به موتور «گفتار گوگل» (Google Speech Services) نیاز است.\n\nاگر صدای پیام پخش نمی‌شود، کلید افزایش صدای گوشی را بررسی کنید، یا با دکمه زیر به تنظیمات رفته و در بخش Preferred Engine گزینه «Google Speech» را فعال فرمایید.",
-                                fontSize = 13.sp,
-                                lineHeight = 20.sp
-                            )
-                        },
-                        confirmButton = {
-                            Button(
-                                onClick = {
-                                    viewModel.dismissTtsGuide()
-                                    viewModel.openTtsSettings(context)
-                                },
-                                colors = ButtonDefaults.buttonColors(containerColor = colors.accentColor)
-                            ) {
-                                Text("تنظیمات گفتار گوشی")
-                            }
-                        },
-                        dismissButton = {
-                            TextButton(onClick = { viewModel.dismissTtsGuide() }) {
-                                Text("بستن")
-                            }
-                        }
+                        onDismiss = { viewModel.closeVoiceSettings() }
                     )
                 }
             }
